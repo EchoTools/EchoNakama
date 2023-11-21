@@ -1,0 +1,34 @@
+name: nakama-node-0
+data_dir: "./data/"
+
+socket:
+  # Replace this with a random string.
+  server_key: "2687c23a-c047-4670-8a1e-42a6491aeaa3"
+  max_message_size_bytes: 4096
+  max_request_size_bytes: 131072
+
+session:
+  # 6h token expiry
+  token_expiry_sec: 21600
+  # Replace both of these with a random strings.
+  encryption_key: "e269006e-a8ab-4bf2-9ecb-9e2f56dbc7fe"
+  refresh_encryption_key: "54ea18d0-3910-4fc9-ab90-68a7b902d35c"
+
+runtime:
+  js_entrypoint: "build/index.js"
+  # Replace this with a random string.
+  http_key: "699916c3-9416-4a70-921b-3e2190c1cd4f"
+
+console:
+  # Replace these with a secure username and password.
+  port: 7351
+  max_mesage_size_bytes: 409600
+  username: "admin"
+  password: "admin"
+  # Replace this with a random string.
+  signing_key: "ddbc4b65-210a-4016-8270-1db27e9c694c"
+
+logger:
+    stdout: true
+    level: "DEBUG"
+    #file: "/nakama/data/logfile.log"
