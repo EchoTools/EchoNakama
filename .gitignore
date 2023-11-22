@@ -135,3 +135,6 @@ local.yml
 # Nakama data
 data/
 build/
+
+# nginx ssl certifications
+nginx_secrets

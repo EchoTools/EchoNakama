@@ -24,11 +24,10 @@ services:
       - "-ecx"
       - >
           /nakama/nakama migrate up --database.address root@cockroachdb:26257 &&
-          exec /nakama/nakama \
-          --name nakama1 \
-          --database.address root@cockroachdb:26257 \
-          --session.token_expiry_sec 7200 \
-          --metrics.prometheus_port 9100 \
+          exec /nakama/nakama
+          --name nakama1 --database.address root@cockroachdb:26257
+          --session.token_expiry_sec 7200
+          --metrics.prometheus_port 9100
           --config /nakama/data/local.yml
     restart: "no"
     links:
@@ -44,10 +43,10 @@ services:
       - "7351"
       - "9100"
     ports:
+      # remove if using nginx
       - "7349:7349"
       - "7350:7350"
       - "7351:7351"
-      - "9100:9100"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7350/"]
       interval: 10s
@@ -77,5 +76,25 @@ services:
       EOF'
     ports:
       - '9090:9090'
+  nginx:
+    image: jonasal/nginx-certbot:latest
+    environment:
+      # This will depend on your authenticator method.
+      # see https://github.com/JonasAlfredsson/docker-nginx-certbot
+      CERTBOT_EMAIL: "a@sprock.io"
+      CERTBOT_AUTHENTICATOR: "dns-cloudflare"
+    ports:
+      - "7349:7349"
+      - "7350:7350"
+      - "7351:7351"
+    volumes:
+      - ./nginx_secrets:/etc/letsencrypt
+      - ./nginx_conf.d:/etc/nginx/user_conf.d
+    links:
+      - nakama
+    depends_on:
+      nakama:
+        condition: service_started
+
 volumes:
   data:
