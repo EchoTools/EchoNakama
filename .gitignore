@@ -132,6 +132,8 @@ dist
 
 # Nakama configuration
 local.yml
+docker-compose.yml
+
 # Nakama data
 data/
 build/

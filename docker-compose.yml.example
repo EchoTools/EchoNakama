@@ -43,7 +43,7 @@ services:
       - "-ecx"
       - >
         ls -l &&
-        dotnet EchoRelay.Nakama.Dll
+        dotnet EchoRelay.Nakama.dll
         --verbose
         --port 7777
         --nakama-uri "http://nakama:7350/?serverKey=1231232e-7222-40e0-b71e-454f5ef6ab42&relayId=spr-echorelay-1"
