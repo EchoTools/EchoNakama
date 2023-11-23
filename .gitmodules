@@ -1,0 +1,3 @@
+[submodule "EchoRelay"]
+	path = EchoRelay
+	url = git@github.com:EchoTools/EchoRelay.git

@@ -1,22 +1,5 @@
 version: '3'
 services:
-  cockroachdb:
-    image: cockroachdb/cockroach:latest-v23.1
-    command: start-single-node --insecure --store=attrs=ssd,path=/var/lib/cockroach/
-    restart: "no"
-    volumes:
-      - data:/var/lib/cockroach
-    expose:
-      - "8080"
-      - "26257"
-    ports:
-      - "26257:26257"
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
-      interval: 3s
-      timeout: 3s
-      retries: 5
   nakama:
     build: .
     entrypoint:
@@ -52,6 +35,47 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  echorelay:
+    build: EchoRelay
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        ls -l &&
+        dotnet EchoRelay.Nakama.Dll
+        --verbose
+        --port 7777
+        --nakama-uri "http://nakama:7350/?serverKey=1231232e-7222-40e0-b71e-454f5ef6ab42&relayId=spr-echorelay-1"
+    command:
+      - >
+    expose:
+      - "7777"
+    ports:
+      - "7777:7777"
+    links:
+      - nakama
+    depends_on:
+      nakama:
+        condition: service_started
+
+  cockroachdb:
+    image: cockroachdb/cockroach:latest-v23.1
+    command: start-single-node --insecure --store=attrs=ssd,path=/var/lib/cockroach/
+    restart: "no"
+    volumes:
+      - data:/var/lib/cockroach
+    expose:
+      - "8080"
+      - "26257"
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
   prometheus:
     image: prom/prometheus
     entrypoint: /bin/sh -c
@@ -77,6 +101,8 @@ services:
     ports:
       - '9090:9090'
   nginx:
+    profiles:
+      - prod
     image: jonasal/nginx-certbot:latest
     environment:
       # This will depend on your authenticator method.
