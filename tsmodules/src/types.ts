@@ -119,7 +119,7 @@ export interface AuthSecrets {
   AccountLockHash: string | null;
   AccountLockSalt: string | null;
 }
-export interface RemoteConfig {
+export interface Config {
   type: string
   id: string
   _ts: number

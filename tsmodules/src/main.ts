@@ -3,7 +3,7 @@ import {
   ClientProfile,
   ServerProfile,
   AuthSecrets,
-  RemoteConfig,
+  Config,
   Document,
   AccessControlList,
   ChannelInfo,
@@ -283,8 +283,8 @@ let generateRpcSetFunction = <T>(dataType: T, collection: string, keyFunc: Funct
 
 
 // Due to Nakama's mapping method, all Rpc functions must be globally assigned
-let setRemoteConfigRpc = generateRpcSetFunction<RemoteConfig>({} as RemoteConfig, 'ClientConfig', (e: any) => e.id);
-let getRemoteConfigRpc = generateRpcGetFunction<RemoteConfig>({} as RemoteConfig, 'ClientConfig', (e: any) => e.id);
+let setConfigRpc = generateRpcSetFunction<Config>({} as Config, 'ClientConfig', (e: any) => e.id);
+let getConfigRpc = generateRpcGetFunction<Config>({} as Config, 'ClientConfig', (e: any) => e.id);
 let setDocumentRpc = generateRpcSetFunction<Document>({} as Document, 'Info', (e: any) => `${e.type}_${e.lang}`);
 let getDocumenRpc = generateRpcGetFunction<Document>({} as Document, 'Info', (e: any) => `${e.type}_${e.lang}`);
 let setAccessControlListRpc = generateRpcSetFunction({} as AccessControlList, 'RelayConfig', (e: any) => 'AccessControlList');
@@ -304,8 +304,8 @@ let InitModule: nkruntime.InitModule =
 
     initializer.registerRpc('echorelay/setAccount', setAccountRpc);
     initializer.registerRpc('echorelay/getAccount', getAccountRpc);
-    initializer.registerRpc('echorelay/setRemoteConfig', setRemoteConfigRpc);
-    initializer.registerRpc('echorelay/getRemoteConfig', getRemoteConfigRpc);
+    initializer.registerRpc('echorelay/setConfig', setConfigRpc);
+    initializer.registerRpc('echorelay/getConfig', getConfigRpc);
     initializer.registerRpc('echorelay/setDocument', setDocumentRpc);
     initializer.registerRpc('echorelay/getDocument', getDocumenRpc);
     initializer.registerRpc('echorelay/setAccessControlList', setAccessControlListRpc);
