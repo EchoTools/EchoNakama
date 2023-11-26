@@ -103,7 +103,7 @@ let accountAsEchoRelayAccount = function (ctx: nkruntime.Context, logger:
  *
  * @returns A JSON string representing the Echo Relay account information for the current user.
  */
-const echoRelayGetAccountRpc =
+const getAccountRpc =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
 
     let userId = ctx.userId;
@@ -125,7 +125,7 @@ const echoRelayGetAccountRpc =
  *
  * @returns A JSON string indicating the success of the operation.
  */
-let echoRelaySetAccountRpc: nkruntime.RpcFunction =
+let setAccountRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
 
     const success = JSON.stringify({ success: true });
@@ -302,6 +302,8 @@ let InitModule: nkruntime.InitModule =
     nk: nkruntime.Nakama,
     initializer: nkruntime.Initializer) {
 
+    initializer.registerRpc('echorelay/setAccount', setAccountRpc);
+    initializer.registerRpc('echorelay/getAccount', getAccountRpc);
     initializer.registerRpc('echorelay/setRemoteConfig', setRemoteConfigRpc);
     initializer.registerRpc('echorelay/getRemoteConfig', getRemoteConfigRpc);
     initializer.registerRpc('echorelay/setDocument', setDocumentRpc);
