@@ -39,11 +39,21 @@ services:
   echorelay:
     build: EchoRelay
     restart: "unless-stopped"
-    command: "-v -p 7777 --nakama-uri "http://nakama:7350/?serverkey=1231232e-7222-40e0-b71e-454f5ef6ab42&relayid=echorelay-1"
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        exec dotnet EchoRelay.Cli.dll
+        --port 6789
+        --nakama-uri "http://nakama:7350/?server_key=1231232e-7222-40e0-b71e-454f5ef6ab42&relay_id=echorelay-1"
+        --apikey 6be0434d8895a84dd22d8895a84dddb1efb0d969
+        --enable-api
+        --statsinterval 10000
+        --verbose
     expose:
-      - "7777"
+      - "6789"
     ports:
-      - "7777:7777"
+      - "6789"
     links:
       - nakama
     depends_on:
