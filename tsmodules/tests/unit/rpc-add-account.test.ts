@@ -1,6 +1,6 @@
 import { createMock } from 'ts-auto-mock';
 import { On, method } from 'ts-auto-mock/extension';
-import AddItemRpc from "./rpc-add-item";
+import { errBadInput, errMissingPayload, setAccountRpc } from "../../src/rpc";
 import { describe, expect, beforeEach, test } from '@jest/globals';
 
 describe('echoRelayAddAccountRpc', function() {
@@ -30,13 +30,8 @@ describe('echoRelayAddAccountRpc', function() {
 
 	test('returns failure if payload is null', function() {
 		const payload = null;
-		const result = AddItemRpc(mockCtx, mockLogger, mockNk, payload);
-		const resultPayload = JSON.parse(result);
-		const expectedError = 'no payload provided';
-
-		expect(resultPayload.success).toBe(false);
-		expect(resultPayload.error).toBe(expectedError);
-		expect(mockLoggerError).toBeCalledWith(expectedError);
+		expect(() => setAccountRpc(mockCtx, mockLogger, mockNk, payload)).toThrow(errMissingPayload);
+		expect(mockLoggerError).toBeCalled();
 	});
 
   // Further code goes here
