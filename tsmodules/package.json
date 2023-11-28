@@ -23,7 +23,7 @@
     },
     "setupFiles": [
       "<rootDir>jest-config.ts"
-      ]
+    ]
   },
   "dependencies": {
     "ansi-styles": "^3.2.1",
