@@ -1,8 +1,8 @@
 import {
   Account,
-  ClientProfile,
-  ServerProfile,
-  AuthSecrets,
+  Server as AccountProfile,
+  Client as ClientProfile,
+  Server as ServerProfile,
   Config,
   Document,
   AccessControlList,
@@ -14,6 +14,7 @@ const errMissingPayload: nkruntime.Error = {
   message: 'no payload provided.',
   code: nkruntime.Codes.NOT_FOUND
 }
+
 const errBadInput: nkruntime.Error = {
   message: 'input contained invalid data.',
   code: nkruntime.Codes.INVALID_ARGUMENT
@@ -85,7 +86,7 @@ let accountAsEchoRelayAccount = function (ctx: nkruntime.Context, logger:
         account.profile.server = object.value as ServerProfile;
         break;
       case 'authSecrets':
-        let authSecrets = object.value as AuthSecrets;
+        let authSecrets = object.value;
         account.account_lock_hash = authSecrets.AccountLockHash;
         account.account_lock_salt = authSecrets.AccountLockSalt;
         break;
@@ -130,21 +131,23 @@ const getAccountRpc =
  * @returns A JSON string indicating the success of the operation.
  */
 let setAccountRpc: nkruntime.RpcFunction =
-  function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
+  function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string | void) {
 
     const success = JSON.stringify({ success: true });
     let userId = ctx.userId;
 
     if (!payload || payload === "") {
-      logger.error('Request missing payload.')
+      logger.error('Request missing payload.');
       throw errMissingPayload;
-
     }
 
     try {
-      var account = JSON.parse(payload) as Account;
-    } catch {
-      throw errBadInput;
+      var account = JSON.parse(payload);
+    } catch (error) {
+      throw {
+        message: `Invalid/corrupt data: ${error}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
     }
 
     // Syncronize the displayname given by the client
@@ -164,7 +167,6 @@ let setAccountRpc: nkruntime.RpcFunction =
       { collection: 'relayConfig', key: 'authSecrets', userId, value: authSecrets, permissionRead: 1, permissionWrite: 1 },
     ];
 
-    // Write the updated inventory to storage.
     const storageWriteAck = nk.storageWrite(newObjects);
 
     // Return a failure if the write does not succeed.
@@ -302,21 +304,21 @@ let getLoginSettingsRpc = generateRpcGetFunction({} as LoginSettings, 'ClientCon
 
 
 export {
-	errBadInput,
-	errMissingId,
+  errBadInput,
+  errMissingId,
   errMissingPayload,
-	errInternal,
-	setAccountRpc,
-	getAccountRpc,
-	setConfigRpc,
-	getConfigRpc,
-	setDocumentRpc,
-	getDocumentRpc,
-	setAccessControlListRpc,
-	getAccessControlListRpc,
-	setChannelInfoRpc,
-	getChannelInfoRpc,
-	setLoginSettingsRpc,
-	getLoginSettingsRpc,
+  errInternal,
+  setAccountRpc,
+  getAccountRpc,
+  setConfigRpc,
+  getConfigRpc,
+  setDocumentRpc,
+  getDocumentRpc,
+  setAccessControlListRpc,
+  getAccessControlListRpc,
+  setChannelInfoRpc,
+  getChannelInfoRpc,
+  setLoginSettingsRpc,
+  getLoginSettingsRpc,
 }
 
