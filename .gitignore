@@ -140,3 +140,5 @@ build/
 
 # nginx ssl certifications
 nginx_secrets
+
+nginx_conf.d/*.conf
