@@ -11,6 +11,8 @@ import {
 	getChannelInfoRpc,
 	setLoginSettingsRpc,
 	getLoginSettingsRpc,
+  getDeviceLinkCodeRpc,
+  DiscordLinkDeviceRpc
 } from './rpc';
 
 // Initialize the server module
@@ -32,6 +34,8 @@ let InitModule: nkruntime.InitModule =
     initializer.registerRpc('echorelay/getChannelInfo', getChannelInfoRpc);
     initializer.registerRpc('echorelay/setLoginSettings', setLoginSettingsRpc);
     initializer.registerRpc('echorelay/getLoginSettings', getLoginSettingsRpc);
+    initializer.registerRpc('echorelay/getDeviceLinkCode', getDeviceLinkCodeRpc);
+    initializer.registerRpc('discordLinkDevice', DiscordLinkDeviceRpc);
   }
 
 

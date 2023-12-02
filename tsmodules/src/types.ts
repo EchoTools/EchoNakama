@@ -267,3 +267,8 @@ export interface ChannelInfo {
   }
   export interface ConfigData {
 }
+
+export interface LinkCode {
+    deviceId: string;
+    code: string;
+}
