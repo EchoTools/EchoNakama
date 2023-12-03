@@ -2,3 +2,6 @@
 	path = EchoRelay
 	url = git@github.com:EchoTools/EchoRelay.git
 	branch = feature/nakama-backend
+[submodule "webapp"]
+	path = webapp
+	url = git@github.com:thesprockee/echovrce-site.git
