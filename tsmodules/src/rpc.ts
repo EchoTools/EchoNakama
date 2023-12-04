@@ -202,7 +202,7 @@ let setAccountRpc: nkruntime.RpcFunction =
 let getDeviceLinkCodeRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
     // Parse the payload data.
-    let deviceId = null; 
+    let deviceId = null;
     try {
       logger.info(payload);
       let data = JSON.parse(payload);
@@ -251,14 +251,17 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
 
     // Parse the payload data.
 
-    var linkCode = null;
-    var discordCode = null;
+    var deviceLinkCode = null;
+    var oauthCode = null;
+    var oauthRedirectUrl = null;
     try {
-      logger.info(payload);
+      logger.debug("Payload:", payload);
       let data = JSON.parse(payload);
 
-      linkCode = data.linkCode;
-      discordCode = data.discordCode;
+      deviceLinkCode = data.linkCode;
+      oauthCode = data.oauthCode
+      oauthRedirectUrl = data.oauthRedirectUrl;
+
     } catch (error) {
       throw {
         message: `Invalid/corrupt data: ${error}`,
@@ -266,21 +269,36 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       } as nkruntime.Error;
     }
 
+    if (!oauthRedirectUrl) {
+      logger.error("Didn't get oauth redirect in url");
+      throw {
+        message: `OAuth redirect URL is missing from payload: ${payload}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+
+    if (!oauthCode) {
+      logger.error("Didn't get oauth code");
+      throw {
+        message: `OAuth code is missing from payload: ${payload}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
 
     // Validate the deviceId and throw an error if missing.
-    if (!linkCode || linkCode.length != 4) {
+    if (!deviceLinkCode || deviceLinkCode.length != 4) {
       throw {
         message: `Link code is invalid/missing from payload: ${payload}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
     // Sanitize the linkCode and make sure it's only capital letters
-    linkCode = linkCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4)
+    deviceLinkCode = deviceLinkCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4)
 
     // Retrieve the linkCode and deviceId from storage.
     let linkObject = {} as LinkCode;
     try {
-      linkObject = getStorageObject(nk, logger, LINKCODE_COLLECTION, linkCode, systemUserId);
+      linkObject = getStorageObject(nk, logger, LINKCODE_COLLECTION, deviceLinkCode, systemUserId);
     } catch (error) {
       throw {
         message: `Link code not found: ${error.message}`,
@@ -288,23 +306,23 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       } as nkruntime.Error;
     }
 
-    var params = `client_id=${ctx.env["DISCORD_CLIENT_ID"]}&` +
-      `client_secret=${ctx.env["DISCORD_CLIENT_SECRET"]}&` +
-      `code=${discordCode}&` +
-      `grant_type=authorization_code&` +
-      `redirect_uri=${ctx.env["DISCORD_OAUTH_REDIRECT_URL"]}&` +
-      `scope=identify`;
-    logger.error("%s", params);
-
     // ensure the payload contains the discord code
-    if (!discordCode) {
+    if (!oauthCode) {
       throw {
         message: `Discord code is missing from payload: ${payload}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
 
-    // exchange the discordCode for the user's access token
+    var params = `client_id=${ctx.env["DISCORD_CLIENT_ID"]}&` +
+      `client_secret=${ctx.env["DISCORD_CLIENT_SECRET"]}&` +
+      `code=${oauthCode}&` +
+      `grant_type=authorization_code&` +
+      `redirect_uri=${oauthRedirectUrl}&` +
+      `scope=identify`;
+    logger.error("%s", params);
+
+    // exchange the oauthCode for the user's access token
     let response = nk.httpRequest("https://discord.com/api/v10/oauth2/token", "post",
       {
         'Accept': 'application/json',
@@ -312,10 +330,23 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
         "Authorization": `${ctx.env["DISCORD_CLIENT_ID"]}:${ctx.env["DISCORD_CLIENT_SECRET"]}`,
 
       }, params);
-
+    
+      let discordResponse = null;
+    try {
+      discordResponse = JSON.parse(response.body);
+    } catch (error) {
+      logger.error("Could not decode discord response body: %s", response.body);
+      throw errInternal(`Could not decode discord response body: ${response.body}`);
+    }
+      
     if (response.code != 200) {
-      logger.error("Discord code exchange failed: %s", response.body);
-      throw errInternal(`Discord code exchange failed: ${response.body}`);
+      if ("error" in discordResponse && discordResponse.error == "invalid_grant") {
+        logger.error("Discord code exchange failed: %s", response.body);
+        throw {
+          message: `Discord code exchange failed: ${response.body}`,
+          code: nkruntime.Codes.UNAUTHENTICATED
+        } as nkruntime.Error;
+      }
     }
 
     // get the user's discord data with the access token  
@@ -399,7 +430,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
     _.merge(account.user.metadata, { discord: { user: discordUser, oauth: accessToken } });
 
     try {
-      let displayName = account.user.displayName || discordUser.global_name || discordUser.username
+      let displayName = account.user.displayName ?? discordUser.global_name ?? discordUser.username;
       nk.accountUpdateId(accountId, username, displayName, null, null, null, null, account.user.metadata);
     } catch (error) {
       logger.error("Failed to update user: %s", error);
