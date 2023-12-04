@@ -320,7 +320,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       `grant_type=authorization_code&` +
       `redirect_uri=${oauthRedirectUrl}&` +
       `scope=identify`;
-    logger.error("%s", params);
+    logger.debug("%s", params);
 
     // exchange the oauthCode for the user's access token
     let response = nk.httpRequest("https://discord.com/api/v10/oauth2/token", "post",
@@ -358,7 +358,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
         'Accept': 'application/json'
       }, null);
 
-    logger.error(response.body);
+    logger.debug(response.body);
 
     if (response.code != 200) {
       logger.error("Discord user lookup failed: %s", response.body);
@@ -368,33 +368,30 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
     let discordUser = JSON.parse(response.body);
     // Construct the username from the discord user data
     let username = discordUser.id;
-
     var accountId = null;
+
+    let users = nk.usersGetUsername([username])
+    if (users.length == 1) {
+      accountId = users[0].userId;
+      // Link the device to the account
+      nk.linkDevice(accountId, linkObject.deviceId);
+    }
+
+  
     try {
       let authResult = nk.authenticateDevice(linkObject.deviceId, null, false);
+      logger.debug("Auth result: %s", authResult);
       accountId = authResult.userId;
     } catch (error) {
-      try {
-        // Wildcard search for the discord ID
-        let users = nk.usersGetUsername([discordUser.Id]);
-        logger.error("Users: %s", users);
-        if (users.length == 1) {
-          accountId = users[0].userId;
-          // Link the device to the account
-          nk.linkDevice(accountId, linkObject.deviceId);
-        }
-      } catch (error) {
-        // The discord username will be ensured next..
-      }
+        logger.debug("%s", error);      
     }
 
     // Authenticate with the device ID, creating the account if it doesn't exist
     try {
-
       let result = nk.authenticateDevice(linkObject.deviceId, username, true);
       accountId = result.userId;
     } catch (error) {
-      logger.error('Failed to authenticate device to user %s: %s', username, error);
+      logger.error('Failed to authenticate device (%s) to user %s: %s', linkObject.deviceId, username, error);
       throw errInternal(`Failed to authenticate device: ${error}`);
     }
     // Link the discord token to the account
