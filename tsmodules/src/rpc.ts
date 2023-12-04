@@ -1,4 +1,4 @@
-import _, { mapKeys } from 'lodash';
+import _, { mapKeys, without } from 'lodash';
 
 import {
   Account,
@@ -21,6 +21,7 @@ import {
 } from './utils';
 
 const systemUserId = "00000000-0000-0000-0000-000000000000";
+const LINKCODE_COLLECTION = "LinkCode";
 
 const errMissingPayload: nkruntime.Error = {
   message: 'no payload provided.',
@@ -201,28 +202,46 @@ let setAccountRpc: nkruntime.RpcFunction =
 let getDeviceLinkCodeRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
     // Parse the payload data.
-    const data = parsePayload(payload);
-    // Generate a new link code
-    var linkData = { "code": generateLinkCode() };
+    let deviceId = null; 
     try {
-      // skip existing ones
-      linkData = getStorageObject(nk, logger, "LinkCode", linkData.code, systemUserId)
-      // Try to create a new link code in storage.
+      logger.info(payload);
+      let data = JSON.parse(payload);
+      deviceId = data.id;
     } catch (error) {
+      throw {
+        message: `Invalid/corrupt data: ${error}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+
+    let linkData = null;
+    while (linkData == null) {
+      // Generate a new link code
+      let newLink = { deviceId, "code": generateLinkCode() };
       try {
-        nk.storageWrite([
-          {
-            collection: "LinkCode", key: linkData.code,
-            value: { "deviceId": data.id, "code": linkData.code },
-            userId: systemUserId, version: '*', permissionRead: 1, permissionWrite: 1
-          }
-        ]);
+        // check if this link code exists
+        let linkObj = getStorageObject(nk, logger, LINKCODE_COLLECTION, linkData.code, systemUserId)
       } catch (error) {
-        logger.error("Failed to create link code: %s", error);
-        throw errInternal(`Failed to create link code: ${error}`);
+        // The link code doesn't exist, so we can use it
+        linkData = newLink;
       }
     }
-    logger.info("Generated link code: %s for %s", linkData.code, data.id)
+
+    // Try to create a new link code in storage.
+    try {
+      nk.storageWrite([
+        {
+          collection: LINKCODE_COLLECTION, key: linkData.code,
+          value: linkData,
+          userId: systemUserId, version: '*', permissionRead: 1, permissionWrite: 1
+        }
+      ]);
+    } catch (error) {
+      logger.error("Failed to create link code: %s", error);
+      throw errInternal(`Failed to create link code: ${error}`);
+    }
+
+    logger.info("Generated link code: %s for %s", linkData.code, linkData.deviceId)
     // Retrieve and return the link code for the device.
     return JSON.stringify(linkData);
   };
@@ -247,7 +266,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       } as nkruntime.Error;
     }
 
-   
+
     // Validate the deviceId and throw an error if missing.
     if (!linkCode || linkCode.length != 4) {
       throw {
@@ -261,10 +280,10 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
     // Retrieve the linkCode and deviceId from storage.
     let linkObject = {} as LinkCode;
     try {
-      linkObject = getStorageObject(nk, logger, "LinkCode", linkCode, systemUserId);
+      linkObject = getStorageObject(nk, logger, LINKCODE_COLLECTION, linkCode, systemUserId);
     } catch (error) {
       throw {
-        message: `Link code not found: ${error}`,
+        message: `Link code not found: ${error.message}`,
         code: nkruntime.Codes.NOT_FOUND
       } as nkruntime.Error;
     }
@@ -273,24 +292,25 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       `client_secret=${ctx.env["DISCORD_CLIENT_SECRET"]}&` +
       `code=${discordCode}&` +
       `grant_type=authorization_code&` +
-      `redirect_uri=${ctx.env["DISCORD_REDIRECT_URI"]}&` +
+      `redirect_uri=${ctx.env["DISCORD_OAUTH_REDIRECT_URL"]}&` +
       `scope=identify`;
-    logger.error(params.replace(/ /g, "%20"));
+    logger.error("%s", params);
 
-     // ensure the payload contains the discord code
-     if (!discordCode) {
+    // ensure the payload contains the discord code
+    if (!discordCode) {
       throw {
         message: `Discord code is missing from payload: ${payload}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
-    
+
     // exchange the discordCode for the user's access token
     let response = nk.httpRequest("https://discord.com/api/v10/oauth2/token", "post",
       {
         'Accept': 'application/json',
         "Content-Type": "application/x-www-form-urlencoded",
         "Authorization": `${ctx.env["DISCORD_CLIENT_ID"]}:${ctx.env["DISCORD_CLIENT_SECRET"]}`,
+
       }, params);
 
     if (response.code != 200) {
@@ -310,8 +330,8 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
     logger.error(response.body);
 
     if (response.code != 200) {
-      logger.error("Discord code exchange failed: %s", response.body);
-      throw errInternal(`Discord code exchange failed: ${response.body}`);
+      logger.error("Discord user lookup failed: %s", response.body);
+      throw errInternal(`Discord user lookup failed: ${response.body}`);
     }
 
     let discordUser = JSON.parse(response.body);
@@ -339,14 +359,14 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
 
     // Authenticate with the device ID, creating the account if it doesn't exist
     try {
-  
+
       let result = nk.authenticateDevice(linkObject.deviceId, username, true);
       accountId = result.userId;
     } catch (error) {
       logger.error('Failed to authenticate device to user %s: %s', username, error);
       throw errInternal(`Failed to authenticate device: ${error}`);
     }
-      // Link the discord token to the account
+    // Link the discord token to the account
     try {
       nk.unlinkCustom(accountId);
     } catch (noterror) {
@@ -360,7 +380,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
 
     try {
       // remove the link code
-      nk.storageDelete([{ collection: "LinkCode", key: linkObject.code, userId: systemUserId }]);
+      nk.storageDelete([{ collection: LINKCODE_COLLECTION, key: linkObject.code, userId: systemUserId }]);
     } catch (error) {
       logger.error("Failed to delete link code: %s", error);
       throw errInternal(`Failed to delete link code: ${error}`);

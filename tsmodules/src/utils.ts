@@ -48,17 +48,18 @@ let parsePayload = function (payload : string): any {
  */
 let getStorageObject = function (nk: nkruntime.Nakama, logger: nkruntime.Logger, collection: string, key: string, userId: string): LinkCode {
   try {
+    logger.info(`looking up ${collection}/${key}/${userId}`);
     let objects: nkruntime.StorageObject[] = nk.storageRead([{ collection, key, userId }]);
-
+    logger.info("%s", objects);
     if (objects.length == 0) throw {
-      message: `${collection}/${key} not found.`,
+      message: `'${collection}/${key}' not found.`,
       code: nkruntime.Codes.NOT_FOUND
     } as nkruntime.Error;
 
     return objects[0].value as LinkCode;
 
   } catch (error) {
-    logger.error('storageRead error: %s', error.message);
+    logger.error('getStorageObject error: %s', error.message);
     throw error;
   }
 }
