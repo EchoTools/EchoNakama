@@ -70,9 +70,9 @@ let accountAsEchoRelayAccount = function (ctx: nkruntime.Context, logger: nkrunt
   };
 
   let storageReadReqs: nkruntime.StorageReadRequest[] = [
-    { collection: 'relayConfig', key: 'authSecrets', userId },
-    { collection: 'profile', key: 'client', userId },
-    { collection: 'profile', key: 'server', userId },
+    { collection: 'RelayConfig', key: 'AuthSecrets', userId },
+    { collection: 'Profile', key: 'Client', userId },
+    { collection: 'Profile', key: 'Server', userId },
   ];
 
   let objects: nkruntime.StorageObject[] = [];
@@ -88,13 +88,13 @@ let accountAsEchoRelayAccount = function (ctx: nkruntime.Context, logger: nkrunt
   // populate the Echo Relay account from storage objects
   objects.forEach((object) => {
     switch (object.key) {
-      case 'client':
+      case 'Client':
         account.profile.client = object.value as ClientProfile;
         break;
-      case 'server':
+      case 'Server':
         account.profile.server = object.value as ServerProfile;
         break;
-      case 'authSecrets':
+      case 'AuthSecrets':
         let authSecrets = object.value;
         account.account_lock_hash = authSecrets.AccountLockHash;
         account.account_lock_salt = authSecrets.AccountLockSalt;
@@ -171,9 +171,9 @@ let setAccountRpc: nkruntime.RpcFunction =
 
     // Write objects with appopriate permissions
     let newObjects: nkruntime.StorageWriteRequest[] = [
-      { collection: 'profile', key: 'client', userId, value: account.profile.client, permissionRead: 2, permissionWrite: 1 },
-      { collection: 'profile', key: 'server', userId, value: account.profile.server, permissionRead: 2, permissionWrite: 1 },
-      { collection: 'relayConfig', key: 'authSecrets', userId, value: authSecrets, permissionRead: 1, permissionWrite: 1 },
+      { collection: 'Profile', key: 'Client', userId, value: account.profile.client, permissionRead: 2, permissionWrite: 1 },
+      { collection: 'Profile', key: 'Server', userId, value: account.profile.server, permissionRead: 2, permissionWrite: 1 },
+      { collection: 'RelayConfig', key: 'AuthSecrets', userId, value: authSecrets, permissionRead: 1, permissionWrite: 1 },
     ];
 
     const storageWriteAck = nk.storageWrite(newObjects);
@@ -202,18 +202,19 @@ let getDeviceLinkCodeRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
     // Parse the payload data.
     const data = parsePayload(payload);
-    // Generate a new link code or retrieve an existing one.
-    var linkCode = { "code": generateLinkCode() };
+    // Generate a new link code
+    var linkData = { "code": generateLinkCode() };
     try {
-      linkCode = getStorageObject(nk, logger, "linkCode", `${linkCode.code}`, systemUserId)
+      // skip existing ones
+      linkData = getStorageObject(nk, logger, "LinkCode", linkData.code, systemUserId)
       // Try to create a new link code in storage.
     } catch (error) {
       try {
         nk.storageWrite([
           {
-            collection: "linkCode", key: `${linkCode.code}`,
-            value: { "deviceId": data.id, "code": linkCode.code },
-            userId: systemUserId, version: '*', permissionRead: 1, permissionWrite: 0
+            collection: "LinkCode", key: linkData.code,
+            value: { "deviceId": data.id, "code": linkData.code },
+            userId: systemUserId, version: '*', permissionRead: 1, permissionWrite: 1
           }
         ]);
       } catch (error) {
@@ -221,19 +222,24 @@ let getDeviceLinkCodeRpc: nkruntime.RpcFunction =
         throw errInternal(`Failed to create link code: ${error}`);
       }
     }
-    logger.info("Generated link code: %s for %s", linkCode.code, data.id)
+    logger.info("Generated link code: %s for %s", linkData.code, data.id)
     // Retrieve and return the link code for the device.
-    return JSON.stringify(linkCode);
+    return JSON.stringify(linkData);
   };
 
 let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
 
     // Parse the payload data.
-    var data = null;
+
+    var linkCode = null;
+    var discordCode = null;
     try {
       logger.info(payload);
-      data = JSON.parse(payload);
+      let data = JSON.parse(payload);
+
+      linkCode = data.linkCode;
+      discordCode = data.discordCode;
     } catch (error) {
       throw {
         message: `Invalid/corrupt data: ${error}`,
@@ -241,29 +247,21 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
       } as nkruntime.Error;
     }
 
-
-    // Sanitize the linkCode and make sure it's only capital letters
-    let linkCode = data.linkCode.toUpperCase().replace(/[^A-Z]/g, '');
-
-    // ensure the payload contains the discord code
-    if (!data.discordCode) {
-      throw {
-        message: `Discord code is missing from payload: ${payload}`,
-        code: nkruntime.Codes.INVALID_ARGUMENT
-      } as nkruntime.Error;
-    }
+   
     // Validate the deviceId and throw an error if missing.
-    if (!data.linkCode || data.linkCode.length != 4) {
+    if (!linkCode || linkCode.length != 4) {
       throw {
         message: `Link code is invalid/missing from payload: ${payload}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
+    // Sanitize the linkCode and make sure it's only capital letters
+    linkCode = linkCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4)
 
     // Retrieve the linkCode and deviceId from storage.
     let linkObject = {} as LinkCode;
     try {
-      linkObject = getStorageObject(nk, logger, "linkCode", `${linkCode}`, systemUserId);
+      linkObject = getStorageObject(nk, logger, "LinkCode", linkCode, systemUserId);
     } catch (error) {
       throw {
         message: `Link code not found: ${error}`,
@@ -273,13 +271,20 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
 
     var params = `client_id=${ctx.env["DISCORD_CLIENT_ID"]}&` +
       `client_secret=${ctx.env["DISCORD_CLIENT_SECRET"]}&` +
-      `code=${data.discordCode}&` +
+      `code=${discordCode}&` +
       `grant_type=authorization_code&` +
       `redirect_uri=${ctx.env["DISCORD_REDIRECT_URI"]}&` +
       `scope=identify`;
     logger.error(params.replace(/ /g, "%20"));
-    // urlencode params
 
+     // ensure the payload contains the discord code
+     if (!discordCode) {
+      throw {
+        message: `Discord code is missing from payload: ${payload}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+    
     // exchange the discordCode for the user's access token
     let response = nk.httpRequest("https://discord.com/api/v10/oauth2/token", "post",
       {
@@ -355,7 +360,7 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
 
     try {
       // remove the link code
-      nk.storageDelete([{ collection: "linkCode", key: linkObject.code, userId: systemUserId }]);
+      nk.storageDelete([{ collection: "LinkCode", key: linkObject.code, userId: systemUserId }]);
     } catch (error) {
       logger.error("Failed to delete link code: %s", error);
       throw errInternal(`Failed to delete link code: ${error}`);
@@ -402,9 +407,9 @@ let DiscordLinkDeviceRpc: nkruntime.RpcFunction =
  *   - `code: nkruntime.Codes.INVALID_ARGUMENT` if the storage key cannot be generated from the provided data.
  *   - `code: nkruntime.Codes.NOT_FOUND` if the requested data is not found in the storage collection.
  */
-let generateRpcGetFunction = <T>(dataType: T, collection: string, keyFunc: Function, userId?: string): nkruntime.RpcFunction => {
+let generateRpcGetFunction = <T>(dataType: T, collection: string, keyFunc: Function): nkruntime.RpcFunction => {
   return function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
-    userId = userId || ctx.userId;
+    let userId = ctx.userId;
     try {
       var data = JSON.parse(payload) as typeof dataType;
 
