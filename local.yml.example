@@ -1,24 +1,28 @@
-name: nakama-node-0
+name: nakama-dev-node
 data_dir: "./data/"
 
 socket:
-  # Replace this with a random string.
-  server_key: "2687c23a-c047-4670-8a1e-42a6491aeaa3"
+  # usually a uuid4
+  server_key: devonly_nakama_server_key
+
   max_message_size_bytes: 4096
-  max_request_size_bytes: 131072
+  max_request_size_bytes: 262144
 
 session:
   # 6h token expiry
   token_expiry_sec: 21600
-  # Replace both of these with a random strings.
-  encryption_key: "e269006e-a8ab-4bf2-9ecb-9e2f56dbc7fe"
-  refresh_encryption_key: "54ea18d0-3910-4fc9-ab90-68a7b902d35c"
+  # usually a uuid4
+  encryption_key: devonly_nakama_encryption_key
+  # usually a uuid4
+  refresh_encryption_key: devonly_nakama_refresh_encryption_key
 
 runtime:
   js_entrypoint: "build/index.js"
-  # Replace this with a random string.
-  http_key: "699916c3-9416-4a70-921b-3e2190c1cd4f"
-
+  # usually a uuid4
+  http_key: devonly_nakama_http_key
+  env:
+    - "DISCORD_CLIENT_ID=12345678901234567890"
+    - "DISCORD_CLIENT_SECRET=SomeSecretClientSecret"
 console:
   # Replace these with a secure username and password.
   port: 7351
@@ -26,9 +30,9 @@ console:
   username: "admin"
   password: "admin"
   # Replace this with a random string.
-  signing_key: "ddbc4b65-210a-4016-8270-1db27e9c694c"
+  signing_key: devonly_nakama_signing_key
 
 logger:
-    stdout: true
-    level: "DEBUG"
-    #file: "/nakama/data/logfile.log"
+  stdout: true
+  level: "DEBUG"
+  #file: "/logs/nakama.log"

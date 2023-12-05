@@ -12,7 +12,10 @@ services:
           --name nakama1 --database.address root@cockroachdb:26257
           --session.token_expiry_sec 7200
           --metrics.prometheus_port 9100
+          --logger.file /logs/nakama.log
           --config /nakama/data/local.yml
+    volumes:
+      - ./logs:/logs
     links:
       - "cockroachdb:db"
     depends_on:
@@ -25,17 +28,16 @@ services:
       - "7350"
       - "7351"
       - "9100"
+    # remove if using nginx as reverse proxy
     ports:
-      # remove if using nginx
       - "7349:7349"
       - "7350:7350"
       - "7351:7351"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7350/"]
+      test: ["CMD", "/nakama/nakama", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
-
   echorelay:
     build: EchoRelay
     restart: "unless-stopped"
@@ -45,15 +47,20 @@ services:
       - >
         exec dotnet EchoRelay.Cli.dll
         --port 6789
-        --nakama-uri "http://nakama:7350/?server_key=1231232e-7222-40e0-b71e-454f5ef6ab42&relay_id=echorelay-1"
-        --apikey 6be0434d8895a84dd22d8895a84dddb1efb0d969
+        --nakama-uri "http://nakama:7350/?server_key=devonly_nakama_server_key&relay_id=dev-sprockee"
+        --apikey devonly_echorelay_api_key
         --enable-api
-        --statsinterval 10000
+        --statsinterval 30000
+        --apikey devonly_echorelay_api_key
         --verbose
+        --logfile /logs/echorelay.log
+    volumes:
+      - ./logs:/logs
     expose:
       - "6789"
+    # remove if using nginx as reverse proxy
     ports:
-      - "6789"
+      - "6789:6789"
     links:
       - nakama
     depends_on:
@@ -69,9 +76,6 @@ services:
     expose:
       - "8080"
       - "26257"
-    ports:
-      - "26257:26257"
-      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
       interval: 3s
@@ -100,25 +104,62 @@ services:
       EON
       prometheus --config.file=./prometheus.yml
       EOF'
-    ports:
-      - '9090:9090'
   nginx:
+    # remove this to have nginx come up automatically. 
+    # remove ports from other services too (check rest of file) 
+    profiles:
+      - prod
     image: jonasal/nginx-certbot:latest
     restart: "unless-stopped"
     environment:
       # This will depend on your authenticator method.
       # see https://github.com/JonasAlfredsson/docker-nginx-certbot
-      CERTBOT_EMAIL: "a@sprock.io"
-      CERTBOT_AUTHENTICATOR: "dns-cloudflare"
+      CERTBOT_EMAIL: "you@example.com"
+      #CERTBOT_AUTHENTICATOR: "dns-cloudflare"
     ports:
+      # echorelay and webapp
       - "80:80"
       - "443:443"
+      # echorelay single port
+      - "6789:6789"
+      # nakama grpc
       - "7349:7349"
+      # nakama http api
       - "7350:7350"
+      # nakama admin console
       - "7351:7351"
+      # echorelay "no path" port based
+      - "31112:31112"
+      - "34712:34712"
+      - "42148:42148"
+      - "42850:42850"
     volumes:
       - ./nginx_secrets:/etc/letsencrypt
       - ./nginx_conf.d:/etc/nginx/user_conf.d
+      # the redirector will interfere with echorelay
+      - ./nginx_conf.d/redirector.conf:/etc/nginx/conf.d/redirector.conf
+    links:
+      - nakama
+    depends_on:
+      nakama:
+        condition: service_started
+  webapp:
+    build:
+      context: ./webapp
+    restart: "unless-stopped"
+    environment:
+      - "NODE_ENV=production"
+      - "SESSION_SECRET=nakama_dev_session_secret"
+      - "DISCORD_OAUTH2_URL=https://discordoauth"
+      - "NAKAMA_API_BASE_URL=http://nakama:7350"
+      - "NAKAMA_HTTP_KEY=devonly_nakama_server_key"
+      - "DISCORD_OAUTH_REDIRECT_URL=http://localhost:3000/oauth/success"
+      - "SUCCESS_REDIRECT_URL=https://discord.gg/echo-combat-lounge-779349159852769310"
+    expose:
+      - "8080"
+    # remove if using nginx reverse proxy
+    ports:
+      - "3000:8080"
     links:
       - nakama
     depends_on:
