@@ -28,7 +28,7 @@ console:
   port: 7351
   max_mesage_size_bytes: 409600
   username: "admin"
-  password: "admin"
+  password: "password"
   # Replace this with a random string.
   signing_key: devonly_nakama_signing_key
 
