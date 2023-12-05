@@ -47,7 +47,7 @@ services:
       - >
         exec dotnet EchoRelay.Cli.dll
         --port 6789
-        --nakama-uri "http://nakama:7350/?server_key=devonly_nakama_server_key&relay_id=dev-sprockee"
+        --nakama-uri "http://nakama:7350/?server_key=devonly_nakama_server_key&relay_id=dev-echorelay"
         --apikey devonly_echorelay_api_key
         --enable-api
         --statsinterval 30000
