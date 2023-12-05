@@ -117,7 +117,9 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
   _.merge(account.user.metadata, { discord: { user: discordUser, oauth: accessToken } });
 
   try {
-    let displayName = account.user.displayName ?? discordUser.global_name ?? discordUser.username;
+
+    let displayName = discordUser.global_name ?? discordUser.username;
+
     nk.accountUpdateId(accountId, username, displayName, null, null, null, null, account.user.metadata);
   } catch (error) {
     logger.error("Failed to update user: %s", error);
