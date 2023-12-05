@@ -185,56 +185,70 @@ let setAccountRpc: nkruntime.RpcFunction =
  * @throws {nkruntime.Error} If the storage write operation fails or if the response from storage write is falsy or empty.
  *   - `code: nkruntime.Codes.INTERNAL` if the storage write operation fails.
  */
-let generateRpcGetFunction = <T>(dataType: T, collectionSelector: Function, keySelector: Function): nkruntime.RpcFunction => {
+let generateRpcGetFunction = <T>(dataType: T, collectionSelect: Function, keySelect: Function): nkruntime.RpcFunction => {
   return function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
     let userId = ctx.userId;
     let key = null;
     let collection = null;
-    let data = {} as typeof dataType;
+    let data = {};
+    logger.debug(payload)
 
     try {
-      data = parsePayload(payload) as typeof dataType;
+      data = parsePayload(payload);
+
     } catch (error) {
+      logger.error('parsePayload error: %s', error.message);
       throw {
-        message: `Invalid/corrupt ${collection} data: ${error}`,
+        message: `Invalid/corrupt data: ${error}`,
         code: nkruntime.Codes.INTERNAL
       } as nkruntime.Error;
     }
 
-
     try {
-      collection = collectionSelector(data);
+      collection = collectionSelect(data);
+
     } catch (error) {
+      logger.error('collectionSelect error: %s', error.message);
       throw {
-        message: `${collection} key not found in data: ${keySelector} ${error}`,
+        message: `Collection function (${collectionSelect}) failed to obtain collection name: ${error}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
 
     try {
-      key = keySelector(data);
+      key = keySelect(data);
+
     } catch (error) {
+      logger.error('keySelect error: %s', error.message);
       throw {
-        message: `${collection} key not found in data: ${keySelector} ${error}`,
+        message: `Key function (${keySelect}) failed to obtain key name: ${error}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
 
+    let responseData = {} as typeof dataType;
     try {
       let objects: nkruntime.StorageObject[] = nk.storageRead([{ collection, key, userId }]);
 
+
       if (objects.length == 0) {
+        logger.error('storageRead error: %s', 'storageRead returned empty');
         throw {
           message: `${collection}/${key} not found.`,
           code: nkruntime.Codes.NOT_FOUND
         } as nkruntime.Error;
       }
+      
+      responseData = objects[0].value as typeof dataType;
 
-      return JSON.stringify(objects[0].value);
     } catch (error) {
       logger.error('storageRead error: %s', error.message);
       throw error;
     }
+
+    logger.debug(JSON.stringify(responseData));
+    return JSON.stringify(responseData);
+
   };
 };
 
@@ -269,19 +283,43 @@ let generateRpcGetFunction = <T>(dataType: T, collectionSelector: Function, keyS
 let generateRpcSetFunction = <T>(dataType: T, collectionSelect: Function, keySelect: Function): nkruntime.RpcFunction => {
   return function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
     const userId = ctx.userId;
-
+    logger.debug(payload)
     let data = {} as typeof dataType;
-    let collection = collectionSelect(data);
-    let key = keySelect(data);
+    let collection = null;
+    let key = null;
 
     try {
       data = parsePayload(payload) as typeof dataType;
     } catch (error) {
+      logger.error('parsePayload error: %s', error.message);
       throw {
         message: `Invalid ${collection} data: ${error}`,
         code: nkruntime.Codes.INVALID_ARGUMENT
       } as nkruntime.Error;
     }
+    try {
+      collection = collectionSelect(data);
+
+    } catch (error) {
+      logger.error('collectionSelect error: %s', error.message);
+      throw {
+        message: `Collection function (${collectionSelect}) failed to obtain collection name: ${error}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+
+    try {
+      key = keySelect(data);
+
+    } catch (error) {
+      logger.error('keySelect error: %s', error.message);
+      throw {
+        message: `Key function (${keySelect}) failed to obtain key name: ${error}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+
+    logger.error("collection: %s, key: %s", collection, key);
 
     let storageWriteAck = [] as nkruntime.StorageWriteAck[];
 
@@ -297,6 +335,7 @@ let generateRpcSetFunction = <T>(dataType: T, collectionSelect: Function, keySel
         }
       ]);
     } catch (error) {
+      logger.error('storageWrite error: %s', error.message);
       throw {
         message: `Invalid ${collection} data: ${error}`,
         code: nkruntime.Codes.INTERNAL
@@ -304,25 +343,26 @@ let generateRpcSetFunction = <T>(dataType: T, collectionSelect: Function, keySel
     }
 
     if (!storageWriteAck || storageWriteAck.length === 0) {
+      logger.error('storageWrite error: %s', 'storageWriteAck is empty');
       throw Errors.errInternal('storageWrite failed.');
     }
-
+    logger.debug("success");
     return JSON.stringify({ success: true });
   };
 };
 
 
 // NOTE: Due to Nakama's mapping method, all Rpc functions must be globally assigned
-let setConfigRpc = generateRpcSetFunction<Config>({} as Config, (e: any) => `Config:${e.type}`, (e: any) => e.id);
-let getConfigRpc = generateRpcGetFunction<Config>({} as Config, (e: any) => `Config:${e.type}`, (e: any) => e.id);
-let setDocumentRpc = generateRpcSetFunction<Document>({} as Document, (e: any) => `Document:${e.type}`, (e: any) => `${e.type}_${e.lang}`);
-let getDocumentRpc = generateRpcGetFunction<Document>({} as Document, (e: any) => `Document:${e.type}`, (e: any) => `${e.type}_${e.lang}`);
-let setAccessControlListRpc = generateRpcSetFunction({} as AccessControlList, (e: any) => `Relay:ACL`, (e: any) => 'allowDenyList');
-let getAccessControlListRpc = generateRpcGetFunction({} as AccessControlList, (e: any) => `Relay:ACL`, (e: any) => 'allowDenyList');
-let setChannelInfoRpc = generateRpcSetFunction({} as ChannelInfo, (e: any) => `Login:channel_info`, (e: any) => 'channel_info');
-let getChannelInfoRpc = generateRpcGetFunction({} as ChannelInfo, (e: any) => `Login:channel_info`, (e: any) => 'channel_info');
-let setLoginSettingsRpc = generateRpcSetFunction({} as LoginSettings, (e: any) => `Login:login_settings`, (e: any) => 'login_settings');
-let getLoginSettingsRpc = generateRpcGetFunction({} as LoginSettings, (e: any) => `Login:login_settings`, (e: any) => 'login_settings');
+let setConfigRpc = generateRpcSetFunction<Config>({} as Config, (e: any) => `config:${e.type}`, (e: any) => e.id);
+let getConfigRpc = generateRpcGetFunction<Config>({} as Config, (e: any) => `config:${e.type}`, (e: any) => e.id);
+let setDocumentRpc = generateRpcSetFunction<Document>({} as Document, (e: any) => `document:${e.type}`, (e: any) => `${e.type}_${e.lang}`);
+let getDocumentRpc = generateRpcGetFunction<Document>({} as Document, (e: any) => `document:${e.type}`, (e: any) => e.id);
+let setAccessControlListRpc = generateRpcSetFunction<AccessControlList>({} as AccessControlList, (e: any) => `relay:acl`, (e: any) => 'allow_deny_list');
+let getAccessControlListRpc = generateRpcGetFunction<AccessControlList>({} as AccessControlList, (e: any) => `relay:acl`, (e: any) => 'allow_deny_list');
+let setChannelInfoRpc = generateRpcSetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `login:channel_info`, (e: any) => 'channel_info');
+let getChannelInfoRpc = generateRpcGetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `login:channel_info`, (e: any) => 'channel_info');
+let setLoginSettingsRpc = generateRpcSetFunction<LoginSettings>({} as LoginSettings, (e: any) => `login:login_settings`, (e: any) => 'login_settings');
+let getLoginSettingsRpc = generateRpcGetFunction<LoginSettings>({} as LoginSettings, (e: any) => `login:login_settings`, (e: any) => 'login_settings');
 
 
 export {
