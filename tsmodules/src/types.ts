@@ -272,3 +272,28 @@ export interface LinkCode {
     deviceId: string;
     code: string;
 }
+
+export interface DiscordAccessToken {
+    access_token:  string;
+    token_type:    string;
+    expires_in:    number;
+    refresh_token: string;
+    scope:         string;
+}
+
+export interface DiscordUser {
+    accent_color:           number;
+    avatar:                 string;
+    avatar_decoration_data: null;
+    banner:                 null;
+    banner_color:           string;
+    discriminator:          string;
+    flags:                  number;
+    global_name:            null;
+    id:                     string;
+    locale:                 string;
+    mfa_enabled:            boolean;
+    premium_type:           number;
+    public_flags:           number;
+    username:               string;
+}

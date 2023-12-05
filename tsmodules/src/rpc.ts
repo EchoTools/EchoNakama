@@ -43,20 +43,21 @@ const accountAsEchoRelayAccount = function (
   nk: nkruntime.Nakama,
   userId: string
 ): Account {
+  const account = nk.accountGetId(userId);
+  
   // The Echo Relay Account skeleton
-  let account: Account = {
+  const echoAccount: Account = {
     is_moderator: false,
     banned_until: null,
     account_lock_hash: null,
     account_lock_salt: null,
     profile: {
-      client: null,
-      server: null,
+      client: {} as ClientProfile,
+      server: {} as ServerProfile,
     },
   };
 
   const storageReadReqs: nkruntime.StorageReadRequest[] = [
-    { collection: 'RelayConfig', key: 'AuthSecrets', userId },
     { collection: 'Profile', key: 'Client', userId },
     { collection: 'Profile', key: 'Server', userId },
   ];
@@ -75,20 +76,18 @@ const accountAsEchoRelayAccount = function (
   objects.forEach((object) => {
     switch (object.key) {
       case 'Client':
-        account.profile.client = object.value as ClientProfile;
+        echoAccount.profile.client = object.value as ClientProfile;
         break;
       case 'Server':
-        account.profile.server = object.value as ServerProfile;
-        break;
-      case 'AuthSecrets':
-        const authSecrets = object.value;
-        account.account_lock_hash = authSecrets.AccountLockHash;
-        account.account_lock_salt = authSecrets.AccountLockSalt;
+        echoAccount.profile.server = object.value as ServerProfile;
         break;
     }
   });
 
-  return account;
+  // force the displayName to be the same on the profiles and account
+  echoAccount.profile.server.displayname = echoAccount.profile.client.displayname = account.user.displayName;
+
+  return echoAccount;
 }
 
 /**
@@ -129,25 +128,28 @@ let setAccountRpc: nkruntime.RpcFunction =
   function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
 
     const success = JSON.stringify({ success: true });
-    let userId = ctx.userId;
-
-    var account = parsePayload(payload);
-
-    // Syncronize the displayname given by the client
-    account.profile.server.displayname = account.profile.client.displayname;
-    nk.accountUpdateId(userId, null, account.profile.client.displayname, null, null, null, null, null);
-
-    // Extract auth secrets to go into another object
-    let authSecrets = {
-      AccountLockHash: account.account_lock_hash,
-      AccountLockSalt: account.account_lock_salt,
-    };
+    const userId = ctx.userId;
+    const account = nk.accountGetId(userId).user.displayName
+    
+    var echoAccount = {} as Account; 
+    try {
+    echoAccount = parsePayload(payload);
+    } catch (error) {
+      logger.error('parsePayload error: %s', error.message);
+      throw {
+        message: `Invalid account data: ${error}`,
+        code: nkruntime.Codes.INVALID_ARGUMENT
+      } as nkruntime.Error;
+    }
+    
+    // Set the server.displayname and client.displayname to that of the nakama account
+    echoAccount.profile.client.displayname = echoAccount.profile.server.displayname = nk.accountGetId(userId).user.displayName;
 
     // Write objects with appopriate permissions
     let newObjects: nkruntime.StorageWriteRequest[] = [
-      { collection: 'Profile', key: 'Client', userId, value: account.profile.client, permissionRead: 2, permissionWrite: 1 },
-      { collection: 'Profile', key: 'Server', userId, value: account.profile.server, permissionRead: 2, permissionWrite: 1 },
-      { collection: 'RelayConfig', key: 'AuthSecrets', userId, value: authSecrets, permissionRead: 1, permissionWrite: 1 },
+      { collection: 'Profile', key: 'Client', userId, value: echoAccount.profile.client, permissionRead: 2, permissionWrite: 1 },
+      { collection: 'Profile', key: 'Server', userId, value: echoAccount.profile.server, permissionRead: 2, permissionWrite: 1 },
+
     ];
 
     const storageWriteAck = nk.storageWrite(newObjects);

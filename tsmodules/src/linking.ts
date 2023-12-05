@@ -1,10 +1,20 @@
 import _ from 'lodash';
-import { LinkCode } from './types';
+import { LinkCode, DiscordAccessToken } from './types';
 import { getStorageObject } from './utils';
 import { errInternal } from './errors';
+import { discordExchangeCode, discordGetCurrentUser, discordRefreshAccessToken } from './discord';
 
 const systemUserId = "00000000-0000-0000-0000-000000000000";
 const LINKCODE_COLLECTION = "LinkCode";
+
+const StoragePermissions = {
+  PUBLIC_READ: 2 as nkruntime.ReadPermissionValues,
+  OWNER_READ: 1 as nkruntime.ReadPermissionValues,
+  NO_READ: 0 as nkruntime.ReadPermissionValues,
+  OWNER_WRITE: 1 as nkruntime.WritePermissionValues,
+  NO_WRITE: 0 as nkruntime.WritePermissionValues,
+};
+
 /**
  * Generates a random 4-character link code using a specified set of characters.
  * The characters include uppercase letters (excluding I and O) and digits.
@@ -71,8 +81,8 @@ const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Con
         value: linkData,
         userId: systemUserId,
         version: '*',
-        permissionRead: 1,
-        permissionWrite: 1
+        permissionRead: StoragePermissions.OWNER_READ,
+        permissionWrite: StoragePermissions.OWNER_WRITE
       }
     ]);
   } catch (error) {
@@ -90,17 +100,17 @@ const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Con
 let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
 
   // Parse and validate the payload data
-  var { oauthCode, oauthRedirectUrl, linkObject } = _parseAndValidateRequest(logger, payload, nk);
+  var { oauthCode, oauthRedirectUrl, linkObject } = _validateLinkRequest(logger, payload, nk);
 
-  // Exchange the oauthCode for the user's access token, and retrieve account metadata
-  let { discordUser, accessToken } = _retrieveDiscordAccount(ctx, oauthCode, oauthRedirectUrl, logger, nk);
-  
+  // Exchange the oauthCode for the user's access token, and retrieve user data
+  let accessToken = discordExchangeCode(ctx, nk, logger, oauthCode, oauthRedirectUrl);
+  let discordUser = discordGetCurrentUser(ctx, nk, logger, accessToken);
   // Construct the username from the discord user data
   let username = discordUser.id;
-  var accountId = null;
 
   // Link the device to the account, or create one if it doesn't exist
-  accountId = _LinkOrCreateAccount(nk, username, accountId, linkObject, logger, accessToken);
+  //  
+  let accountId = _LinkOrCreateAccount(ctx, nk, logger, username, linkObject,  accessToken);
 
   _deleteLinkCode(nk, linkObject, logger);
 
@@ -115,16 +125,6 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
 
   // Update the user's info
   _.merge(account.user.metadata, { discord: { user: discordUser, oauth: accessToken } });
-
-  try {
-
-    let displayName = discordUser.global_name ?? discordUser.username;
-
-    nk.accountUpdateId(accountId, username, displayName, null, null, null, null, account.user.metadata);
-  } catch (error) {
-    logger.error("Failed to update user: %s", error);
-    throw errInternal(`Failed to update user: ${error}`);
-  }
 
   // Retrieve and return the link code for the device.
   return JSON.stringify({ "success": true });
@@ -158,7 +158,9 @@ function _deleteLinkCode(nk: nkruntime.Nakama, linkObject: LinkCode, logger: nkr
  * @param accessToken - The access token.
  * @returns The ID of the linked or created account.
  */
-function _LinkOrCreateAccount(nk: nkruntime.Nakama, username: any, accountId: any, linkObject: LinkCode, logger: nkruntime.Logger, accessToken: any) {
+function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkObject: LinkCode,  accessToken: DiscordAccessToken) {
+  let accountId = null;
+
   let users = nk.usersGetUsername([username]);
   if (users.length == 1) {
     accountId = users[0].userId;
@@ -166,11 +168,11 @@ function _LinkOrCreateAccount(nk: nkruntime.Nakama, username: any, accountId: an
     nk.linkDevice(accountId, linkObject.deviceId);
   }
 
-
   try {
     let authResult = nk.authenticateDevice(linkObject.deviceId, null, false);
     logger.debug("Auth result: %s", authResult);
     accountId = authResult.userId;
+
   } catch (error) {
     logger.debug("%s", error);
   }
@@ -179,89 +181,18 @@ function _LinkOrCreateAccount(nk: nkruntime.Nakama, username: any, accountId: an
   try {
     let result = nk.authenticateDevice(linkObject.deviceId, username, true);
     accountId = result.userId;
+
   } catch (error) {
     logger.error('Failed to authenticate device (%s) to user %s: %s', linkObject.deviceId, username, error);
     throw errInternal(`Failed to authenticate device: ${error}`);
   }
+
   // Link the discord token to the account
-  try {
-    nk.unlinkCustom(accountId);
-  } catch (noterror) {
-  }
-  try {
-    nk.linkCustom(accountId, accessToken.access_token);
-  } catch (error) {
-    logger.error('Could not link %s to %s', accessToken.access_token, accountId);
-    throw errInternal(`Could not link ${accessToken.access_token} to ${accountId}`);
-  }
+  refreshDiscordLink(ctx, nk, logger, accountId, accessToken, true)
+
   return accountId;
 }
 
-/**
- * Retrieves the Discord account information by exchanging the OAuth code for an access token
- * and then using the access token to fetch the user's Discord data.
- * @param ctx - The Nakama runtime context.
- * @param oauthCode - The OAuth code obtained from the client.
- * @param oauthRedirectUrl - The redirect URL used during the OAuth process.
- * @param logger - The logger instance for logging debug and error messages.
- * @param nk - The Nakama instance for making HTTP requests.
- * @returns An object containing the user's Discord data and access token.
- * @throws {Error} If the code exchange or user lookup fails.
- */
-function _retrieveDiscordAccount(ctx: nkruntime.Context, oauthCode: any, oauthRedirectUrl: any, logger: nkruntime.Logger, nk: nkruntime.Nakama) {
-  var params = `client_id=${ctx.env["DISCORD_CLIENT_ID"]}&` +
-    `client_secret=${ctx.env["DISCORD_CLIENT_SECRET"]}&` +
-    `code=${oauthCode}&` +
-    `grant_type=authorization_code&` +
-    `redirect_uri=${oauthRedirectUrl}&` +
-    `scope=identify`;
-  logger.debug("%s", params);
-
-  // exchange the oauthCode for the user's access token
-  let response = nk.httpRequest("https://discord.com/api/v10/oauth2/token", "post",
-    {
-      'Accept': 'application/json',
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": `${ctx.env["DISCORD_CLIENT_ID"]}:${ctx.env["DISCORD_CLIENT_SECRET"]}`,
-    }, params);
-
-  let discordResponse = null;
-  try {
-    discordResponse = JSON.parse(response.body);
-  } catch (error) {
-    logger.error("Could not decode discord response body: %s", response.body);
-    throw errInternal(`Could not decode discord response body: ${response.body}`);
-  }
-
-  if (response.code != 200) {
-    if ("error" in discordResponse && discordResponse.error == "invalid_grant") {
-      logger.error("Discord code exchange failed: %s", response.body);
-      throw {
-        message: `Discord code exchange failed: ${response.body}`,
-        code: nkruntime.Codes.UNAUTHENTICATED
-      } as nkruntime.Error;
-    }
-  }
-
-  // get the user's discord data with the access token  
-  let accessToken = JSON.parse(response.body);
-  response = nk.httpRequest("https://discord.com/api/v10/users/@me", "get",
-    {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": `Bearer ${accessToken.access_token}`,
-      'Accept': 'application/json'
-    }, null);
-
-  logger.debug(response.body);
-
-  if (response.code != 200) {
-    logger.error("Discord user lookup failed: %s", response.body);
-    throw errInternal(`Discord user lookup failed: ${response.body}`);
-  }
-
-  let discordUser = JSON.parse(response.body);
-  return { discordUser, accessToken };
-}
 
 /**
  * Parses and validates the request payload.
@@ -272,7 +203,7 @@ function _retrieveDiscordAccount(ctx: nkruntime.Context, oauthCode: any, oauthRe
  * @returns An object containing the parsed and validated oauthCode, oauthRedirectUrl, and linkObject.
  * @throws {nkruntime.Error} If the payload is invalid or missing required data.
  */
-function _parseAndValidateRequest(logger: nkruntime.Logger, payload: string, nk: nkruntime.Nakama) {
+function _validateLinkRequest(logger: nkruntime.Logger, payload: string, nk: nkruntime.Nakama) {
   var deviceLinkCode = null;
   var oauthCode = null;
   var oauthRedirectUrl = null;
@@ -330,6 +261,87 @@ function _parseAndValidateRequest(logger: nkruntime.Logger, payload: string, nk:
   }
   return { oauthCode, oauthRedirectUrl, linkObject };
 }
+
+function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, userId: string, accessToken?: DiscordAccessToken, noRefresh = false) {
+  // retrieve the discord access_token storage object
+  let collection = "discord";
+  let key = "accessToken";
+
+  if (!accessToken) {
+    try {
+      accessToken = getStorageObject(nk, logger, collection, key, userId) as DiscordAccessToken;
+    } catch (error) {
+      logger.error("Failed to retrieve discord/accessToken: %s", error);
+      throw errInternal(`Failed to retrieve discord/accessToken: ${error}`);
+    }
+  }
+
+  // refresh the access token
+  let newAccessToken = {} as DiscordAccessToken;
+  if (noRefresh) {
+    newAccessToken = accessToken;
+  } else {
+    try {
+      newAccessToken = discordRefreshAccessToken(ctx, nk, logger, accessToken);
+    } catch (error) {
+      logger.error("Failed to refresh discord access token: %s", error.message);
+      throw errInternal(`Failed to refresh discord access token: ${error}`);
+    }
+  }
+
+  // update the storage object
+  try {
+    nk.storageWrite([
+      {
+        collection,
+        key,
+        value: newAccessToken,
+        userId,
+        permissionRead: StoragePermissions.NO_READ,
+        permissionWrite: StoragePermissions.NO_WRITE,
+      }
+    ]);
+  } catch (error) {
+    logger.error("Failed to update discord/accessToken: %s", error);
+    throw errInternal(`Failed to update discord/accessToken: ${error}`);
+  }
+
+  // relink custom with new access token
+  try {
+    nk.unlinkCustom(userId);
+  } catch (noterror) {
+  }
+  try {
+    nk.linkCustom(userId, newAccessToken.access_token);
+  } catch (error) {
+    logger.error("Failed to link discord access token: %s", error);
+    throw errInternal(`Failed to link discord access token: ${error}`);
+  }
+  // Retrieve the full User object
+  let user = discordGetCurrentUser(ctx, nk, logger, accessToken);
+
+  // Update the user's info
+  let displayName = user.global_name ?? user.username;
+  nk.accountUpdateId(userId, user.id, displayName, null, null, null, null);
+  // Create a storage object with the discord user data
+  try {
+    nk.storageWrite([
+      {
+        collection: "discord",
+        key: "user",
+        value: user,
+        userId,
+        permissionRead: StoragePermissions.OWNER_READ,
+        permissionWrite: StoragePermissions.NO_WRITE,
+      }
+    ]);
+  } catch (error) {
+    logger.error("Failed to update discord/user: %s", error);
+    throw errInternal(`Failed to update discord/user: ${error}`);
+
+  }
+}
+
 
 export {
   getDeviceLinkCodeRpc,
