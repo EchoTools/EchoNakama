@@ -297,3 +297,139 @@ export interface DiscordUser {
     public_flags:           number;
     username:               string;
 }
+
+// RemoteLogSetv3 log
+export interface GamePauseSettings {
+    announcer:            number;
+    music:                number;
+    sfx:                  number;
+    voip:                 number;
+    wristangleoffset:     number;
+    smoothrotationspeed:  number;
+    personalbubbleradius: number;
+    grabdeadzone:         number;
+    releasedistance:      number;
+    personalbubblemode:   number;
+    personalspacemode:    number;
+    voipmode:             number;
+    voipmodeffect:        number;
+    voiploudnesslevel:    number;
+    dynamicmusicmode:     number;
+    HUD:                  boolean;
+    EnableYaw:            boolean;
+    EnablePitch:          boolean;
+    EnableRoll:           boolean;
+    EnableSmoothRotation: boolean;
+    EnablePersonalBubble: boolean;
+    EnablePersonalSpace:  boolean;
+    EnableNetStatusHUD:   boolean;
+    EnableNetStatusPause: boolean;
+    EnableAPIAccess:      boolean;
+    EnableGhostAll:       boolean;
+    EnableMuteAll:        boolean;
+    EnableMuteEnemyTeam:  boolean;
+    MatchTagDisplay:      boolean;
+    EnableVoipLoudness:   boolean;
+    EnableMaxLoudness:    boolean;
+    EnableStreamerMode:   boolean;
+}
+export interface LoginRequest {
+    accountid:                   number;
+    displayname:                 null;
+    bypassauth:                  boolean;
+    access_token:                string;
+    nonce:                       string;
+    buildversion:                number;
+    lobbyversion:                number;
+    appid:                       number;
+    publisher_lock:              string;
+    hmdserialnumber:             string;
+    desiredclientprofileversion: number;
+    game_settings:               GameSettings;
+    system_info:                 SystemInfo;
+    graphics_settings:           GraphicsSettings;
+}
+
+export interface GameSettings {
+    experimentalthrowing: number;
+    smoothrotationspeed:  number;
+    HUD:                  boolean;
+    voipmode:             number;
+    MatchTagDisplay:      boolean;
+    EnableNetStatusHUD:   boolean;
+    EnableGhostAll:       boolean;
+    EnablePitch:          boolean;
+    EnablePersonalBubble: boolean;
+    releasedistance:      number;
+    EnableYaw:            boolean;
+    EnableNetStatusPause: boolean;
+    dynamicmusicmode:     number;
+    EnableRoll:           boolean;
+    EnableMuteAll:        boolean;
+    EnableMaxLoudness:    boolean;
+    EnableSmoothRotation: boolean;
+    EnableAPIAccess:      boolean;
+    EnableMuteEnemyTeam:  boolean;
+    EnableVoipLoudness:   boolean;
+    voiploudnesslevel:    number;
+    voipmodeffect:        number;
+    personalbubblemode:   number;
+    announcer:            number;
+    ghostallmode:         number;
+    music:                number;
+    personalbubbleradius: number;
+    sfx:                  number;
+    voip:                 number;
+    grabdeadzone:         number;
+    wristangleoffset:     number;
+    muteallmode:          number;
+}
+
+export interface GraphicsSettings {
+    temporalaa:                 boolean;
+    fullscreen:                 boolean;
+    display:                    number;
+    adaptiverestargetframerate: number;
+    adaptiveresmaxscale:        number;
+    adaptiveresolution:         boolean;
+    adaptiveresminscale:        number;
+    resolutionscale:            number;
+    qualitylevel:               number;
+    adaptiveresheadroom:        number;
+    quality:                    Quality;
+    msaa:                       number;
+    sharpening:                 number;
+    multires:                   boolean;
+    gamma:                      number;
+    capturefov:                 number;
+}
+
+export interface Quality {
+    shadowresolution:   number;
+    fx:                 number;
+    bloom:              boolean;
+    cascaderesolution:  number;
+    cascadedistance:    number;
+    textures:           number;
+    shadowmsaa:         number;
+    meshes:             number;
+    shadowfilterscale:  number;
+    staggerfarcascades: boolean;
+    volumetrics:        boolean;
+    lights:             number;
+    shadows:            number;
+    anims:              number;
+}
+
+export interface SystemInfo {
+    headset_type:         string;
+    driver_version:       string;
+    network_type:         string;
+    video_card:           string;
+    cpu:                  string;
+    num_physical_cores:   number;
+    num_logical_cores:    number;
+    memory_total:         number;
+    memory_used:          number;
+    dedicated_gpu_memory: number;
+}

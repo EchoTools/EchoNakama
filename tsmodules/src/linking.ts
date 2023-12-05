@@ -3,17 +3,10 @@ import { LinkCode, DiscordAccessToken } from './types';
 import { getStorageObject } from './utils';
 import { errInternal } from './errors';
 import { discordExchangeCode, discordGetCurrentUser, discordRefreshAccessToken } from './discord';
+import { StoragePermissions } from './utils';
+import { systemUserId } from './utils';
+import { CollectionMap } from './utils';
 
-const systemUserId = "00000000-0000-0000-0000-000000000000";
-const LINKCODE_COLLECTION = "LinkCode";
-
-const StoragePermissions = {
-  PUBLIC_READ: 2 as nkruntime.ReadPermissionValues,
-  OWNER_READ: 1 as nkruntime.ReadPermissionValues,
-  NO_READ: 0 as nkruntime.ReadPermissionValues,
-  OWNER_WRITE: 1 as nkruntime.WritePermissionValues,
-  NO_WRITE: 0 as nkruntime.WritePermissionValues,
-};
 
 /**
  * Generates a random 4-character link code using a specified set of characters.
@@ -65,7 +58,7 @@ const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Con
     let newLink = { deviceId, "code": generateLinkCode() };
     try {
       // Check if this link code exists
-      let linkObj = getStorageObject(nk, logger, LINKCODE_COLLECTION, linkData.code, systemUserId)
+      let linkObj = getStorageObject(nk, logger, CollectionMap.linkCode, linkData.code, systemUserId)
     } catch (error) {
       // The link code doesn't exist, so we can use it
       linkData = newLink;
@@ -76,7 +69,7 @@ const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Con
   try {
     nk.storageWrite([
       {
-        collection: LINKCODE_COLLECTION,
+        collection: CollectionMap.linkCode,
         key: linkData.code,
         value: linkData,
         userId: systemUserId,
@@ -139,7 +132,7 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
  */
 function _deleteLinkCode(nk: nkruntime.Nakama, linkObject: LinkCode, logger: nkruntime.Logger) {
   try {
-    nk.storageDelete([{ collection: LINKCODE_COLLECTION, key: linkObject.code, userId: systemUserId }]);
+    nk.storageDelete([{ collection: CollectionMap.linkCode, key: linkObject.code, userId: systemUserId }]);
   } catch (error) {
     logger.error("Failed to delete link code: %s", error);
     throw errInternal(`Failed to delete link code: ${error}`);
@@ -244,7 +237,7 @@ function _validateLinkRequest(logger: nkruntime.Logger, payload: string, nk: nkr
   // Retrieve the linkCode and deviceId from storage.
   let linkObject = {} as LinkCode;
   try {
-    linkObject = getStorageObject(nk, logger, LINKCODE_COLLECTION, deviceLinkCode, systemUserId) as LinkCode;
+    linkObject = getStorageObject(nk, logger, CollectionMap.linkCode, deviceLinkCode, systemUserId) as LinkCode;
   } catch (error) {
     throw {
       message: `Link code not found: ${error.message}`,
@@ -264,8 +257,8 @@ function _validateLinkRequest(logger: nkruntime.Logger, payload: string, nk: nkr
 
 function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, userId: string, accessToken?: DiscordAccessToken, noRefresh = false) {
   // retrieve the discord access_token storage object
-  let collection = "discord";
-  let key = "accessToken";
+  let collection = CollectionMap.discord;
+  let key = CollectionMap.discordAccessToken;
 
   if (!accessToken) {
     try {
@@ -327,8 +320,8 @@ function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger
   try {
     nk.storageWrite([
       {
-        collection: "discord",
-        key: "user",
+        collection: CollectionMap.discord,
+        key: CollectionMap.discordUser,
         value: user,
         userId,
         permissionRead: StoragePermissions.OWNER_READ,

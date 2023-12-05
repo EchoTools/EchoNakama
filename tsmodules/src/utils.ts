@@ -1,4 +1,25 @@
 import _ from 'lodash';
+export const systemUserId = "00000000-0000-0000-0000-000000000000";
+
+export const StoragePermissions = {
+  PUBLIC_READ: 2 as nkruntime.ReadPermissionValues,
+  OWNER_READ: 1 as nkruntime.ReadPermissionValues,
+  NO_READ: 0 as nkruntime.ReadPermissionValues,
+  OWNER_WRITE: 1 as nkruntime.WritePermissionValues,
+  NO_WRITE: 0 as nkruntime.WritePermissionValues,
+};
+
+export const CollectionMap = {
+  linkCode: "linkcode",
+  discord: "discord",
+  discordAccessToken: "accesstoken",
+  discordUser: "user",
+  echoProfile: 'echoprofile',
+  echoProfileServer: 'server',
+  echoProfileClient: 'client',
+};
+
+
 
 
 /**

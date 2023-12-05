@@ -1,4 +1,6 @@
 import {
+  CollectionMap,
+  StoragePermissions,
   getStorageObject,
   parsePayload,
 } from './utils';
@@ -21,8 +23,6 @@ import {
   getDeviceLinkCodeRpc,
   discordLinkDeviceRpc,
 } from './linking';
-
-const systemUserId = "00000000-0000-0000-0000-000000000000";
 
 
 /**
@@ -58,8 +58,8 @@ const accountAsEchoRelayAccount = function (
   };
 
   const storageReadReqs: nkruntime.StorageReadRequest[] = [
-    { collection: 'Profile', key: 'Client', userId },
-    { collection: 'Profile', key: 'Server', userId },
+    { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileClient, userId },
+    { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileServer, userId },
   ];
 
   let objects: nkruntime.StorageObject[] = [];
@@ -75,10 +75,10 @@ const accountAsEchoRelayAccount = function (
   // Populate the Echo Relay account from storage objects
   objects.forEach((object) => {
     switch (object.key) {
-      case 'Client':
+      case CollectionMap.echoProfileClient:
         echoAccount.profile.client = object.value as ClientProfile;
         break;
-      case 'Server':
+      case CollectionMap.echoProfileServer:
         echoAccount.profile.server = object.value as ServerProfile;
         break;
     }
@@ -129,8 +129,7 @@ let setAccountRpc: nkruntime.RpcFunction =
 
     const success = JSON.stringify({ success: true });
     const userId = ctx.userId;
-    const account = nk.accountGetId(userId).user.displayName
-    
+ 
     var echoAccount = {} as Account; 
     try {
     echoAccount = parsePayload(payload);
@@ -142,13 +141,13 @@ let setAccountRpc: nkruntime.RpcFunction =
       } as nkruntime.Error;
     }
     
-    // Set the server.displayname and client.displayname to that of the nakama account
+    // Override the display name with the Nakama account
     echoAccount.profile.client.displayname = echoAccount.profile.server.displayname = nk.accountGetId(userId).user.displayName;
 
     // Write objects with appopriate permissions
     let newObjects: nkruntime.StorageWriteRequest[] = [
-      { collection: 'Profile', key: 'Client', userId, value: echoAccount.profile.client, permissionRead: 2, permissionWrite: 1 },
-      { collection: 'Profile', key: 'Server', userId, value: echoAccount.profile.server, permissionRead: 2, permissionWrite: 1 },
+      { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileClient, userId, value: echoAccount.profile.client, permissionRead: StoragePermissions.PUBLIC_READ, permissionWrite: StoragePermissions.OWNER_WRITE },
+      { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileServer, userId, value: echoAccount.profile.server, permissionRead: StoragePermissions.OWNER_READ, permissionWrite: StoragePermissions.NO_WRITE },
 
     ];
 
