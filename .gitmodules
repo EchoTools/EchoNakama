@@ -4,4 +4,4 @@
 	branch = feature/nakama-backend
 [submodule "webapp"]
 	path = webapp
-	url = git@github.com:thesprockee/echovrce-site.git
+	url = git@github.com:EchoTools/EchoNakama-webapp.git
