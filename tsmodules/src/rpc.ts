@@ -146,8 +146,22 @@ let setAccountRpc: nkruntime.RpcFunction =
 
     // Write objects with appopriate permissions
     let newObjects: nkruntime.StorageWriteRequest[] = [
-      { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileClient, userId, value: echoAccount.profile.client, permissionRead: StoragePermissions.PUBLIC_READ, permissionWrite: StoragePermissions.OWNER_WRITE },
-      { collection: CollectionMap.echoProfile, key: CollectionMap.echoProfileServer, userId, value: echoAccount.profile.server, permissionRead: StoragePermissions.OWNER_READ, permissionWrite: StoragePermissions.NO_WRITE },
+      {
+        collection: CollectionMap.echoProfile,
+        key: CollectionMap.echoProfileClient,
+        userId,
+        value: echoAccount.profile.client,
+        permissionRead: StoragePermissions.PUBLIC_READ,
+        permissionWrite: StoragePermissions.OWNER_WRITE
+      },
+      {
+        collection: CollectionMap.echoProfile,
+        key: CollectionMap.echoProfileServer,
+        userId,
+        value: echoAccount.profile.server,
+        permissionRead: StoragePermissions.OWNER_READ,
+        permissionWrite: StoragePermissions.NO_WRITE
+      },
 
     ];
 
@@ -354,16 +368,16 @@ let generateRpcSetFunction = <T>(dataType: T, collectionSelect: Function, keySel
 
 
 // NOTE: Due to Nakama's mapping method, all Rpc functions must be globally assigned
-let setConfigRpc = generateRpcSetFunction<Config>({} as Config, (e: any) => `config:${e.type}`, (e: any) => e.id);
-let getConfigRpc = generateRpcGetFunction<Config>({} as Config, (e: any) => `config:${e.type}`, (e: any) => e.id);
-let setDocumentRpc = generateRpcSetFunction<Document>({} as Document, (e: any) => `document:${e.type}`, (e: any) => `${e.type}_${e.lang}`);
-let getDocumentRpc = generateRpcGetFunction<Document>({} as Document, (e: any) => `document:${e.type}`, (e: any) => e.id);
-let setAccessControlListRpc = generateRpcSetFunction<AccessControlList>({} as AccessControlList, (e: any) => `relay:acl`, (e: any) => 'allow_deny_list');
-let getAccessControlListRpc = generateRpcGetFunction<AccessControlList>({} as AccessControlList, (e: any) => `relay:acl`, (e: any) => 'allow_deny_list');
-let setChannelInfoRpc = generateRpcSetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `login:channel_info`, (e: any) => 'channel_info');
-let getChannelInfoRpc = generateRpcGetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `login:channel_info`, (e: any) => 'channel_info');
-let setLoginSettingsRpc = generateRpcSetFunction<LoginSettings>({} as LoginSettings, (e: any) => `login:login_settings`, (e: any) => 'login_settings');
-let getLoginSettingsRpc = generateRpcGetFunction<LoginSettings>({} as LoginSettings, (e: any) => `login:login_settings`, (e: any) => 'login_settings');
+let setConfigRpc = generateRpcSetFunction<Config>({} as Config, (e: any) => `Config:${e.type}`, (e: any) => e.id);
+let getConfigRpc = generateRpcGetFunction<Config>({} as Config, (e: any) => `Config:${e.type}`, (e: any) => e.id);
+let setDocumentRpc = generateRpcSetFunction<Document>({} as Document, (e: any) => `Document:${e.type}`, (e: any) => `${e.type}_${e.lang}`);
+let getDocumentRpc = generateRpcGetFunction<Document>({} as Document, (e: any) => `Document:${e.type}`, (e: any) => e.id);
+let setAccessControlListRpc = generateRpcSetFunction<AccessControlList>({} as AccessControlList, (e: any) => `Relay:acl`, (e: any) => 'allow_deny_list');
+let getAccessControlListRpc = generateRpcGetFunction<AccessControlList>({} as AccessControlList, (e: any) => `Relay:acl`, (e: any) => 'allow_deny_list');
+let setChannelInfoRpc = generateRpcSetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `Login:channel_info`, (e: any) => 'channel_info');
+let getChannelInfoRpc = generateRpcGetFunction<ChannelInfo>({} as ChannelInfo, (e: any) => `Login:channel_info`, (e: any) => 'channel_info');
+let setLoginSettingsRpc = generateRpcSetFunction<LoginSettings>({} as LoginSettings, (e: any) => `Login:login_settings`, (e: any) => 'login_settings');
+let getLoginSettingsRpc = generateRpcGetFunction<LoginSettings>({} as LoginSettings, (e: any) => `Login:login_settings`, (e: any) => 'login_settings');
 
 
 export {

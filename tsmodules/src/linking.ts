@@ -1,11 +1,12 @@
 import _ from 'lodash';
-import { LinkCode, DiscordAccessToken } from './types';
+import { LinkTicket, DiscordAccessToken } from './types';
 import { getStorageObject } from './utils';
 import { errInternal } from './errors';
 import { discordExchangeCode, discordGetCurrentUser, discordRefreshAccessToken } from './discord';
 import { StoragePermissions } from './utils';
 import { systemUserId } from './utils';
 import { CollectionMap } from './utils';
+import { PlatformCodeExtensions } from './game/platform-code';
 
 
 /**
@@ -41,24 +42,25 @@ const generateLinkCode = (): string => {
  */
 const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string) {
   // Parse the payload data.
-  let deviceId = null;
-  try {
+  let DeviceLinkResponse = {};
+  let linkData = null;
+  try
+   {
     logger.info(payload);
-    let data = JSON.parse(payload);
-    deviceId = data.id;
+    linkData = JSON.parse(payload);
   } catch (error) {
     throw {
       message: `Invalid/corrupt data: ${error}`,
       code: nkruntime.Codes.INVALID_ARGUMENT
     } as nkruntime.Error;
   }
-  let linkData = null;
+
   while (linkData == null) {
     // Generate a new link code
-    let newLink = { deviceId, "code": generateLinkCode() };
+    let newLink = {"code": generateLinkCode() };
     try {
       // Check if this link code exists
-      let linkObj = getStorageObject(nk, logger, CollectionMap.linkCode, linkData.code, systemUserId)
+      let linkObj = getStorageObject(nk, logger, CollectionMap.linkTicket, linkData.code, systemUserId)
     } catch (error) {
       // The link code doesn't exist, so we can use it
       linkData = newLink;
@@ -69,7 +71,7 @@ const getDeviceLinkCodeRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Con
   try {
     nk.storageWrite([
       {
-        collection: CollectionMap.linkCode,
+        collection: CollectionMap.linkTicket,
         key: linkData.code,
         value: linkData,
         userId: systemUserId,
@@ -97,6 +99,7 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
 
   // Exchange the oauthCode for the user's access token, and retrieve user data
   let accessToken = discordExchangeCode(ctx, nk, logger, oauthCode, oauthRedirectUrl);
+  logger.debug("Access token: %s", accessToken);
   let discordUser = discordGetCurrentUser(ctx, nk, logger, accessToken);
   // Construct the username from the discord user data
   let username = discordUser.id;
@@ -127,12 +130,12 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
 /**
  * Deletes a link code from the storage.
  * @param nk - The Nakama instance.
- * @param linkObject - The link code object to delete.
+ * @param linkTicket - The link code object to delete.
  * @param logger - The logger instance.
  */
-function _deleteLinkCode(nk: nkruntime.Nakama, linkObject: LinkCode, logger: nkruntime.Logger) {
+function _deleteLinkCode(nk: nkruntime.Nakama, linkTicket: LinkTicket, logger: nkruntime.Logger) {
   try {
-    nk.storageDelete([{ collection: CollectionMap.linkCode, key: linkObject.code, userId: systemUserId }]);
+    nk.storageDelete([{ collection: CollectionMap.linkTicket, key: linkTicket.link_code, userId: systemUserId }]);
   } catch (error) {
     logger.error("Failed to delete link code: %s", error);
     throw errInternal(`Failed to delete link code: ${error}`);
@@ -146,23 +149,31 @@ function _deleteLinkCode(nk: nkruntime.Nakama, linkObject: LinkCode, logger: nkr
  * @param nk - The Nakama instance.
  * @param username - The username of the account.
  * @param accountId - The ID of the account.
- * @param linkObject - The link code object.
+ * @param linkTicket - The link code object.
  * @param logger - The logger instance.
  * @param accessToken - The access token.
  * @returns The ID of the linked or created account.
  */
-function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkObject: LinkCode,  accessToken: DiscordAccessToken) {
+function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkTicket: LinkTicket,  accessToken: DiscordAccessToken) {
   let accountId = null;
+  let authId = null;
+
+  if (linkTicket.hmd_serial_number != "") {
+    authId = linkTicket.hmd_serial_number;
+    logger.debug("Using serial number");
+  } else {
+    authId = linkTicket.xplatform_id_str;
+  }
 
   let users = nk.usersGetUsername([username]);
   if (users.length == 1) {
     accountId = users[0].userId;
     // Link the device to the account
-    nk.linkDevice(accountId, linkObject.deviceId);
+    nk.linkDevice(accountId, authId);
   }
 
   try {
-    let authResult = nk.authenticateDevice(linkObject.deviceId, null, false);
+    let authResult = nk.authenticateDevice(authId, null, false);
     logger.debug("Auth result: %s", authResult);
     accountId = authResult.userId;
 
@@ -172,11 +183,11 @@ function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logg
 
   // Authenticate with the device ID, creating the account if it doesn't exist
   try {
-    let result = nk.authenticateDevice(linkObject.deviceId, username, true);
+    let result = nk.authenticateDevice(authId, username, true);
     accountId = result.userId;
 
   } catch (error) {
-    logger.error('Failed to authenticate device (%s) to user %s: %s', linkObject.deviceId, username, error);
+    logger.error('Failed to authenticate device (%s) to user %s: %s', authId, username, error);
     throw errInternal(`Failed to authenticate device: ${error}`);
   }
 
@@ -235,9 +246,9 @@ function _validateLinkRequest(logger: nkruntime.Logger, payload: string, nk: nkr
   deviceLinkCode = deviceLinkCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 
   // Retrieve the linkCode and deviceId from storage.
-  let linkObject = {} as LinkCode;
+  let linkTicket = {} as LinkTicket;
   try {
-    linkObject = getStorageObject(nk, logger, CollectionMap.linkCode, deviceLinkCode, systemUserId) as LinkCode;
+    linkTicket = getStorageObject(nk, logger, CollectionMap.linkTicket, deviceLinkCode, systemUserId) as LinkTicket;
   } catch (error) {
     throw {
       message: `Link code not found: ${error.message}`,
@@ -252,10 +263,11 @@ function _validateLinkRequest(logger: nkruntime.Logger, payload: string, nk: nkr
       code: nkruntime.Codes.INVALID_ARGUMENT
     } as nkruntime.Error;
   }
-  return { oauthCode, oauthRedirectUrl, linkObject };
+  return { oauthCode, oauthRedirectUrl, linkObject: linkTicket };
 }
 
-function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, userId: string, accessToken?: DiscordAccessToken, noRefresh = false) {
+
+export function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, userId: string, accessToken?: DiscordAccessToken, noRefresh = false) {
   // retrieve the discord access_token storage object
   let collection = CollectionMap.discord;
   let key = CollectionMap.discordAccessToken;
@@ -268,6 +280,7 @@ function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger
       throw errInternal(`Failed to retrieve discord/accessToken: ${error}`);
     }
   }
+
 
   // refresh the access token
   let newAccessToken = {} as DiscordAccessToken;

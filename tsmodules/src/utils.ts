@@ -10,16 +10,14 @@ export const StoragePermissions = {
 };
 
 export const CollectionMap = {
-  linkCode: "linkcode",
-  discord: "discord",
+  linkTicket: "Login:linkTicket",
+  discord: "Discord",
   discordAccessToken: "accesstoken",
   discordUser: "user",
-  echoProfile: 'echoprofile',
+  echoProfile: 'Profile',
   echoProfileServer: 'server',
   echoProfileClient: 'client',
 };
-
-
 
 
 /**

@@ -1,3 +1,5 @@
+import { XPlatformId } from "./game/x-platform-id";
+
 export interface AccessControlList {
     allow: string[];
     deny: string[];
@@ -268,9 +270,10 @@ export interface ChannelInfo {
   export interface ConfigData {
 }
 
-export interface LinkCode {
-    deviceId: string;
-    code: string;
+export interface LinkTicket {
+    link_code: string;
+    xplatform_id_str: string;
+    hmd_serial_number: string;
 }
 
 export interface DiscordAccessToken {
@@ -433,3 +436,4 @@ export interface SystemInfo {
     memory_used:          number;
     dedicated_gpu_memory: number;
 }
+
