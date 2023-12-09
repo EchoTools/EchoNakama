@@ -8,7 +8,20 @@ RUN npm install
 COPY tsmodules/. .
 RUN npm run build
 
+FROM heroiclabs/nakama-pluginbuilder:3.19.0 AS go-builder
+
+ENV GO111MODULE on
+ENV CGO_ENABLED 1
+
+WORKDIR /backend
+
+
+COPY gomodules/ .
+
+RUN go build --trimpath --mod=vendor --buildmode=plugin -o ./servicesrpc.so
+
 FROM registry.heroiclabs.com/heroiclabs/nakama:3.19.0
 
-COPY --from=node-builder /backend/build/*.js /nakama/data/modules/build/
+COPY --from=go-builder /backend/*.so /nakama/data/modules/
+COPY --from=node-builder /backend/build/*.js /nakama/data/modules/
 COPY local.yml /nakama/data/

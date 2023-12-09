@@ -17,7 +17,7 @@ session:
   refresh_encryption_key: devonly_nakama_refresh_encryption_key
 
 runtime:
-  js_entrypoint: "build/index.js"
+  js_entrypoint: "index.js"
   # usually a uuid4
   http_key: devonly_nakama_http_key
   env:
