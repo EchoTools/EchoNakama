@@ -22,27 +22,18 @@ function(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama,
 */
 
 import { errInternal } from "./errors";
-import { errInternal } from "./errors";
+
 import { refreshDiscordLink } from './linking';
-import { DiscordAccessToken } from "./types";
+
 import { DiscordAccessToken } from "./types";
 import { getStorageObject } from "./utils";
+
 import { CollectionMap } from "./utils";
-import { getStorageObject } from "./utils";
-import { CollectionMap } from "./utils";
-
-import { DiscordAccessToken } from './types';
-import { CollectionMap } from './utils';
-
-let registerHooks = function (initializer : nkruntime.Initializer) {
-// Register as an after hook for the appropriate feature, this call should be in InitModule.
-//initializer.registerBeforeAuthenticateDevice(validateDevice);
-}
 
 
-export { registerHooks };
+
 // a nakama hook for the authenticatecustom function 
-function refreshDiscordLinkHook(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama) {
+export function refreshDiscordLinkHook(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama) {
   // read the discord access token from the storage object
   let collection = CollectionMap.discord;
   let key = CollectionMap.discordAccessToken;

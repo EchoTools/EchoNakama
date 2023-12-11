@@ -12,7 +12,7 @@ export const StoragePermissions = {
 export const CollectionMap = {
   linkTicket: "Login:linkTicket",
   discord: "Discord",
-  discordAccessToken: "accesstoken",
+  discordAccessToken: "access_token",
   discordUser: "user",
   echoProfile: 'Profile',
   echoProfileServer: 'server',

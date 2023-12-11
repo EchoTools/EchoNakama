@@ -1,22 +1,48 @@
 package login
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"regexp"
 	"time"
 
 	"echo-nakama/game"
+	"echo-nakama/server/services"
 
 	"github.com/google/uuid"
 	"github.com/heroiclabs/nakama-common/api"
 	"github.com/heroiclabs/nakama-common/runtime"
 )
 
-const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"
+const (
+	SYSTEM_USER_ID                  = "00000000-0000-0000-0000-000000000000"
+	LINKTICKET_COLLECTION           = "Login:linkTicket"
+	LINKTICKET_INDEX                = "Index_" + LINKTICKET_COLLECTION
+	DISCORD_ACCESS_TOKEN_COLLECTION = "Login:discordAccessToken"
+
+	PASSWORD_QUERY_PARAM = "auth"
+	LINK_URL             = "https://echovrce.com/link"
+
+	LOGIN_SETTINGS_COLLECTION = "Login:login_settings"
+	LOGIN_SETTINGS_KEY        = "login_settings"
+	PROFILE_COLLECTION        = "Profile"
+	PROFILE_SERVER_KEY        = "server"
+	PROFILE_CLIENT_KEY        = "client"
+	XPLATFORMID_COLLECTION    = "Xplatformid"
+	LOGIN_REQUEST_COLLECTION  = "Login:login_request"
+)
+
+const (
+	AUTH_TYPE_FAIL         = iota
+	AUTH_TYPE_DEVICE_ID    = iota
+	AUTH_TYPE_ACCESS_TOKEN = iota
+)
+
+const (
+	APPID_NOOVR = 0
+	APPID_QUEST = 2215004568539258
+	APPID_PCVR  = 1369078409873402
+)
 
 // Constants representing different error codes.
 const (
@@ -38,29 +64,6 @@ const (
 	DATA_LOSS           = 15 // DATA_LOSS indicates a loss of data occurred.
 	UNAUTHENTICATED     = 16 // UNAUTHENTICATED indicates the request lacks valid authentication credentials.
 )
-
-// ILoginService defines the interface for the login service.
-type ILoginService interface {
-	CheckUserSessionValid(session uuid.UUID, userId game.XPlatformID) bool
-}
-
-// LoginService is the implementation of the login service.
-type LoginService struct {
-	userSessions map[uuid.UUID]game.XPlatformID
-}
-
-// NewLoginService creates a new instance of LoginService.
-func NewLoginService() *LoginService {
-	return &LoginService{
-		userSessions: make(map[uuid.UUID]game.XPlatformID),
-	}
-}
-
-// CheckUserSessionValid checks if a provided user session token is valid.
-func (ls *LoginService) CheckUserSessionValid(session uuid.UUID, userId game.XPlatformID) bool {
-	storedUserId, ok := ls.userSessions[session]
-	return ok && userId == storedUserId
-}
 
 // Assuming you have a struct named RequestInfoType in Go that corresponds to AccountInfo in C#
 type RequestInfoType struct {
@@ -84,11 +87,12 @@ type SessionVars struct {
 }
 
 type LoginSuccess struct {
-	XPlatformId   game.XPlatformID `json:"xplatform_id"`
-	Session       string           `json:"session_guid"`
-	Token         string           `json:"session_token"`
-	LoginSettings LoginSettings    `json:"login_settings"`
-	PlayerData    game.PlayerData  `json:"account_data"`
+	XPlatformId   game.XPlatformID  `json:"xplatform_id"`
+	DeviceIdStr   string            `json:"device_id_str"`
+	SessionGuid   string            `json:"session_guid"`
+	SessionToken  string            `json:"session_token"`
+	LoginSettings LoginSettings     `json:"login_settings"`
+	GameProfiles  game.GameProfiles `json:"game_profiles"`
 }
 
 // Config represents the structure of the provided JSON.
@@ -119,13 +123,40 @@ func DefaultLoginSettings() LoginSettings {
 	}
 }
 
-// GenerateLinkCode generates a random link code consisting of 4 characters from the set of valid characters.
-// The set of valid characters is defined as "ABCDEFGHJKLMNPQRSTUVWXYZ".
+type DiscordAccessToken struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+	Scope        string `json:"scope"`
+}
+
+// LinkTicket represents a ticket used for linking accounts to Discord.
+// It contains the link code, xplatform ID string, and HMD serial number.
+type LinkTicket struct {
+	LinkCode       string        `json:"link_code"`
+	DeviceIdStr    string        `json:"device_id_str"`
+	XplatformIdStr string        `json:"xplatform_id_str"`
+	LoginRequest   *LoginRequest `json:"login_request"`
+}
+
+type DeviceId struct {
+	AppId           int64  `json:"appid"`
+	XPlatformIdStr  string `json:"xplatform_id_str"`
+	HmdSerialNumber string `json:"hmd_serial_number"`
+}
+
+func (d DeviceId) String() string {
+	return fmt.Sprintf("%d:%s:%s", d.AppId, d.XPlatformIdStr, d.HmdSerialNumber)
+}
+
+// GenerateLinkCode generates a 4 character random link code.
+// The character set excludes homoglyphs.
 // The random number generator is seeded with the current time to ensure randomness.
 // Returns the generated link code as a string.
 func GenerateLinkCode() string {
 	// Define the set of valid characters for the link code
-	characters := "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	characters := "ABCDEFGHJKLMNPRSTUVWXYZ"
 
 	// Create a new local random generator with a known seed value
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -138,32 +169,45 @@ func GenerateLinkCode() string {
 
 	// Randomly select an index from the array and generate the code
 	var code string
-	for _, _ = range indices {
+	for range indices {
 		code += string(characters[rng.Intn(len(characters))])
 	}
 
 	return code
 }
 
-type LinkTicket struct {
-	LinkCode        string `json:"link_code"`
-	XplatformIDStr  string `json:"xplatform_id_str"`
-	HmdSerialNumber string `json:"hmd_serial_number"`
-}
-
 // call GenerateLinkCode and attempt write it to storage
 // if it fails, call GenerateLinkCode again
 // if it succeeds, return the link code
-func GenerateLinkTicket(
-	ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, userId string,
-	xplatformId game.XPlatformID, hmdSerialNumber string) (*LinkTicket, *runtime.Error) {
+func (request *LoginRequest) LinkTicket(serviceContext *services.ServiceContext, userId string) (*LinkTicket, *runtime.Error) {
+	linkTicket := &LinkTicket{}
+	ctx := serviceContext.Ctx
+	nk := serviceContext.NakamaModule
+	logger := serviceContext.Logger
+	// Check if a link ticket already exists for the provided xplatformId and hmdSerialNumber
+	objectIds, err := nk.StorageIndexList(ctx, SYSTEM_USER_ID, LINKTICKET_INDEX, fmt.Sprintf("+value.xplatform_id_str:%s", request.DeviceId().XPlatformIdStr), 10)
+	if err != nil {
+		return nil, runtime.NewError(fmt.Sprintf("error listing link tickets: `%q`  %v", "+value.xplatform_id_str:"+request.DeviceId().XPlatformIdStr, err), INTERNAL)
+	}
+	logger.WithField("objectIds", objectIds).Debug("Link ticket found/generated.")
+	// Link ticket was found. Return the link ticket.
+	if objectIds != nil {
+		for _, record := range objectIds.Objects {
+			json.Unmarshal([]byte(record.Value), &linkTicket)
 
-	// loop until we have a unique link code
+			return linkTicket, nil
+		}
+	}
+
+	// Generate a link code and attempt to write it to storage
 	for {
-		linkTicket := LinkTicket{
-			LinkCode:        GenerateLinkCode(),
-			XplatformIDStr:  xplatformId.String(),
-			HmdSerialNumber: hmdSerialNumber,
+		// loop until we have a unique link code
+
+		linkTicket = &LinkTicket{
+			LinkCode:       GenerateLinkCode(),
+			DeviceIdStr:    request.DeviceId().String(),
+			XplatformIdStr: request.DeviceId().XPlatformIdStr,
+			LoginRequest:   request,
 		}
 
 		linkTicketJson, err := json.Marshal(linkTicket)
@@ -174,7 +218,7 @@ func GenerateLinkTicket(
 		// Write the link code to storage
 		objectIDs := []*runtime.StorageWrite{
 			{
-				Collection:      "Login:linkTicket",
+				Collection:      LINKTICKET_COLLECTION,
 				Key:             linkTicket.LinkCode,
 				UserID:          SYSTEM_USER_ID,
 				Value:           string(linkTicketJson),
@@ -188,124 +232,142 @@ func GenerateLinkTicket(
 		if err != nil {
 			continue
 		}
-		return &linkTicket, nil
+		return linkTicket, nil
 	}
 }
 
-// ProcessLoginRequest processes a LoginRequest.
-func ProcessLoginRequest(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, request *LoginRequest) (string, *runtime.Error) {
-	// If we have existing session data for this peer's connection, invalidate it.
-	// Note: The client may have multiple connections, represented as different peers.
-	// This only invalidates the current connection prior to accepting a new login.
-	//InvalidatePeerUserSession(sender)
+// authenticateClient is a function that authenticates a client using the provided service context and login request.
+// It returns the Nakama user ID, username, and any error that occurred during authentication.
+func authenticateAccountDevice(serviceContext *services.ServiceContext, loginRequest *LoginRequest, authPassword string) (*api.Account, *runtime.Error) {
+	ctx := serviceContext.Ctx
+	nk := serviceContext.NakamaModule
+	logger := serviceContext.Logger
+	var nkUserId string
+	var err error
+	xplatformIdStr := loginRequest.XPlatformId.String()
+
+	// Validate the user identifier
+	if !loginRequest.XPlatformId.Valid() {
+		return nil, runtime.NewError(fmt.Sprintf("Invalid XPlatformId: %q", xplatformIdStr), INVALID_ARGUMENT)
+	}
+
+	nkUserId, _, _, err = nk.AuthenticateDevice(ctx, loginRequest.DeviceId().String(), "", false)
+	if err != nil { // account is missing, this is okay.
+		logger.WithField("err", err).WithField("device_id_str", loginRequest.DeviceId().String()).Debug("Device not linked.")
+		err = nil
+	}
+
+	if nkUserId == "" {
+		// No Account. Create link ticket and return error
+		linkTicket, err := loginRequest.LinkTicket(serviceContext, SYSTEM_USER_ID)
+		if err != nil {
+			logger.WithField("err", err).Error("Unable to generate link ticket.")
+			return nil, runtime.NewError(fmt.Sprintf("Unable to generate link ticket: %q", xplatformIdStr), INTERNAL)
+		}
+		logger.WithField("linkTicket", linkTicket).Debug("Link ticket found/generated.")
+		return nil, runtime.NewError(fmt.Sprintf("Visit %s and enter code: %s", LINK_URL, linkTicket.LinkCode), NOT_FOUND)
+
+	}
+
+	// Authorize the authenticated account
+	account, err := nk.AccountGetId(ctx, nkUserId)
+	if err != nil {
+		return nil, runtime.NewError(fmt.Sprintf("Unable to get account for Id: %q", xplatformIdStr), INTERNAL)
+	}
+
+	// Check if the account is disabled/banned
+	if account.GetDisableTime() != nil {
+		return nil, runtime.NewError(fmt.Sprintf("Account Permanently Banned: %q", xplatformIdStr), PERMISSION_DENIED)
+	}
+
+	// If the account has a password set, authenticate the 'auth=' query param as the password
+
+	if account.Email != "" {
+
+		_, _, _, err = nk.AuthenticateEmail(ctx, account.Email, authPassword, "", false)
+		if err != nil {
+			return nil, runtime.NewError(fmt.Sprintf("Invalid password for account: %q", xplatformIdStr), UNAUTHENTICATED)
+		}
+	} else if authPassword != "" {
+		// if the 'auth=' query param is set, set the password to the 'auth=' query param
+		nk.LinkEmail(ctx, nkUserId, account.User.Id+"@null.echovrce.com", authPassword)
+		if err != nil {
+			return nil, runtime.NewError(fmt.Sprintf("Unable to set password for account: %q", xplatformIdStr), INTERNAL)
+		}
+	}
+
+	if account.CustomId == "" {
+		// if the account does not have a customId, return nothing, and let the client know that they need to link their account
+		return nil, runtime.NewError(fmt.Sprintf("Account (%q) not linked to Discord. visit %s", xplatformIdStr, LINK_URL), INTERNAL)
+	}
+	// verify that the account has a valid customId by authenticating to it (this activates the validation/refresh hook)
+	// if the account does not have a valid customId, this will return an error
+	_, _, _, err = nk.AuthenticateCustom(ctx, account.CustomId, "", false)
+	if err != nil {
+		return nil, runtime.NewError(fmt.Sprintf("Discord link is invalid. visit %s", LINK_URL), INTERNAL)
+	}
+
+	return account, nil
+}
+
+// ProcessLoginRequest processes a login request and returns the login success response or an error.
+// It returns a string representing the login success response and a *runtime.Error object if there is an error.
+func ProcessLoginRequest(serviceContext *services.ServiceContext, request *LoginRequest) (*LoginSuccess, *runtime.Error) {
+	ctx := serviceContext.Ctx
+	logger := serviceContext.Logger
+	nk := serviceContext.NakamaModule
+
+	// immediately pop the password out of the requests to avoid
+	// displaying it in the logs
+	authPassword := request.AuthPassword
+	request.AuthPassword = ""
 
 	relayUserId, ok := ctx.Value(runtime.RUNTIME_CTX_USER_ID).(string)
 	if !ok {
-		logger.Error("must authenticate before processing request")
-		return "", runtime.NewError("relay did not authenticate first", UNAUTHENTICATED)
+		return nil, runtime.NewError("relay must authenticate", UNAUTHENTICATED)
 	}
 
 	relayUserName, ok := ctx.Value(runtime.RUNTIME_CTX_USERNAME).(string)
 	if !ok {
-		logger.Error("must authenticate before processing request")
-		return "", runtime.NewError("relay did not authenticate first", UNAUTHENTICATED)
+		return nil, runtime.NewError("relay must authenticate", UNAUTHENTICATED)
 	}
+
 	logger.WithField("relayUserName", relayUserName).WithField("request", request).Debug("Processing login request.")
 
-	if !ok {
-		logger.Error("must authenticate before processing request")
-		return "", runtime.NewError("relay did not authenticate first", UNAUTHENTICATED)
+	account, nkerr := authenticateAccountDevice(serviceContext, request, authPassword)
+	if nkerr != nil {
+		logger.WithField("nkerr", nkerr).Error("Authentication Errored.")
+		return nil, nkerr
 	}
 
+	// Authorize the client to use the authenticated account
+	nkUserId := account.User.Id
 	currentTimestamp := time.Now().UTC().Unix()
-	hmdSerialNumber := request.AccountInfo.Hmdserialnumber
-	xplatformIdStr := request.XPlatformId.String()
 	sessionGuid := uuid.New()
-	var nkUserId string
-	var account *api.Account
-
-	var username string
-	var err error
-	var isOvrClient bool = true
-
-	// Validate the user identifier
-	if !request.XPlatformId.Valid() {
-		return "", runtime.NewError(fmt.Sprintf("Invalid User Identifier\n'%v' is invalid.", xplatformIdStr), INVALID_ARGUMENT)
-	}
-
-	if hmdSerialNumber == "N/A" {
-		isOvrClient = false
-	} else if request.AccountInfo.AccountId > 0 {
-		isOvrClient = false
-	} else if !regexp.MustCompile("^[A-Z0-9]{8,12}$").MatchString(hmdSerialNumber) {
-		isOvrClient = false
-	}
-
-	if request.XPlatformId.AccountId == 3963667097037078 {
-		isOvrClient = false
-	}
-	if isOvrClient {
-		logger.WithField("hmdSerialNumber", hmdSerialNumber).Debug("OVR Client detected, authenticating with HMD Serial Number")
-		nkUserId, username, _, err = nk.AuthenticateDevice(ctx, hmdSerialNumber, "", false)
-
-	} else {
-		logger.WithField("xplatform_id", xplatformIdStr).Debug("Non-OVR Client detected, authenticating with XPlatformId")
-		nkUserId, username, _, err = nk.AuthenticateDevice(ctx, xplatformIdStr, "", false)
-
-	}
-	if err != nil {
-		// No Account. Create link ticket and return error
-		logger.
-			WithField("err", err).
-			WithField("isOvrClient", isOvrClient).
-			WithField("xplatformIdStr", xplatformIdStr).
-			WithField("hmdSerialNumber", hmdSerialNumber).
-			Error("Unable to authenticate device.")
-		linkTicket, err := GenerateLinkTicket(ctx, logger, db, nk, SYSTEM_USER_ID, request.XPlatformId, hmdSerialNumber)
-		if err != nil {
-			logger.WithField("err", err).Error("Unable to generate link ticket.")
-			return "", runtime.NewError(fmt.Sprintf("Unable to generate link ticket: %s", xplatformIdStr), INTERNAL)
-		}
-		logger.WithField("linkTicket", linkTicket).Debug("Generated link ticket.")
-
-		// TODO: allow custom linking urls
-		return "", runtime.NewError(fmt.Sprintf("Visit https://echovrce.com/link and enter code: %s", linkTicket.LinkCode), NOT_FOUND)
-
-	}
 
 	// Generate a session token with the Guid
-	token, _, err := nk.AuthenticateTokenGenerate(nkUserId, username, 0, map[string]string{"sessionGuid": sessionGuid.String()})
+	token, _, err := nk.AuthenticateTokenGenerate(account.User.Id, account.User.Username, 0, map[string]string{"sessionGuid": sessionGuid.String()})
 	if err != nil {
 		logger.WithField("err", err).Error("Authenticate token generate error.")
-		return "", runtime.NewError("Authenticate token generate error.", INTERNAL)
-	}
-
-	account, err = nk.AccountGetId(ctx, nkUserId)
-	if err != nil {
-		logger.WithField("err", err).Error("Unable to get account: %s", xplatformIdStr)
-		return "", runtime.NewError(fmt.Sprintf("Unable to get account: %s", xplatformIdStr), INTERNAL)
-	}
-
-	if account.GetDisableTime() != nil {
-		return "", runtime.NewError(fmt.Sprintf("Account Permanently Banned: %s", xplatformIdStr), PERMISSION_DENIED)
+		return nil, runtime.NewError("Authenticate token generation error.", INTERNAL)
 	}
 
 	// generate a blank playerData object
-	playerData := game.DefaultPlayerData(request.XPlatformId, request.AccountInfo.Displayname)
+	gameProfiles := game.DefaultGameProfiles(request.XPlatformId, request.LoginData.Displayname)
 
 	// read the client profile from the storage layer
-
+	// TODO: Extact method
 	objectIds := []*runtime.StorageRead{{
-		Collection: "Profile",
-		Key:        "client",
+		Collection: PROFILE_COLLECTION,
+		Key:        PROFILE_CLIENT_KEY,
 		UserID:     nkUserId,
 	}, {
-		Collection: "Profile",
-		Key:        "server",
+		Collection: PROFILE_COLLECTION,
+		Key:        PROFILE_SERVER_KEY,
 		UserID:     nkUserId,
 	}, {
-		Collection: "Login:login_settings",
-		Key:        "login_settings",
+		Collection: LOGIN_SETTINGS_COLLECTION,
+		Key:        LOGIN_SETTINGS_KEY,
 		UserID:     relayUserId,
 	}, /* {
 		Collection: "Login:linking_settings",
@@ -321,74 +383,77 @@ func ProcessLoginRequest(ctx context.Context, logger runtime.Logger, db *sql.DB,
 		logger.WithField("err", err).Error("Storage read error.")
 	} else {
 		for _, record := range records {
-			if record.Key == "client" {
-				err = json.Unmarshal([]byte(record.Value), &playerData.Profile.Client)
+			if record.Key == PROFILE_CLIENT_KEY {
+				err = json.Unmarshal([]byte(record.Value), &gameProfiles.Client)
 				if err != nil {
-					return "", runtime.NewError(fmt.Sprintf("error unmarshaling client playerData: %v", err), INTERNAL)
+					return nil, runtime.NewError(fmt.Sprintf("error unmarshaling client playerData: %v", err), INTERNAL)
 				}
-			} else if record.Key == "server" {
-				err = json.Unmarshal([]byte(record.Value), &playerData.Profile.Server)
+			} else if record.Key == PROFILE_SERVER_KEY {
+				err = json.Unmarshal([]byte(record.Value), &gameProfiles.Server)
 				if err != nil {
-					return "", runtime.NewError(fmt.Sprintf("error unmarshaling server playerData: %v", err), INTERNAL)
+					return nil, runtime.NewError(fmt.Sprintf("error unmarshaling server playerData: %v", err), INTERNAL)
 				}
-			} else if record.Key == "login_settings" {
+			} else if record.Key == LOGIN_SETTINGS_KEY {
 				err = json.Unmarshal([]byte(record.Value), &loginSettings)
 				if err != nil {
-					return "", runtime.NewError(fmt.Sprintf("error unmarshaling server playerData: %v", err), INTERNAL)
+					return nil, runtime.NewError(fmt.Sprintf("error unmarshaling server playerData: %v", err), INTERNAL)
 				}
 			}
 		}
 	}
 
 	// Update the server profile's logintime and updatetime.
-	playerData.Profile.Server.LobbyVersion = int(request.AccountInfo.LobbyVersion)
-	playerData.Profile.Server.LoginTime = currentTimestamp
-	playerData.Profile.Server.ModifyTime = account.User.UpdateTime.Seconds
-	playerData.Profile.Server.UpdateTime = account.User.UpdateTime.Seconds
-	playerData.Profile.Server.DisplayName = account.User.DisplayName
-	playerData.Profile.Client.DisplayName = account.User.DisplayName
+	gameProfiles.Server.LobbyVersion = int(request.LoginData.LobbyVersion)
+	gameProfiles.Server.LoginTime = currentTimestamp
+	gameProfiles.Server.ModifyTime = account.User.UpdateTime.Seconds
+	gameProfiles.Server.UpdateTime = account.User.UpdateTime.Seconds
+	gameProfiles.Server.DisplayName = account.User.DisplayName
+	gameProfiles.Client.DisplayName = account.User.DisplayName
 
 	// Write the profile data to storage
-	jsonAccountInfo, err := request.AccountInfo.Marshal()
+	jsonRequest, err := json.Marshal(request)
 	if err != nil {
 		logger.WithField("err", err).Error("Invalid account info.")
+		return nil, runtime.NewError(fmt.Sprintf("error marshaling accountInfo: %v", err), INTERNAL)
 	}
-	clientProfileJson, err := json.Marshal(playerData.Profile.Client)
+	clientProfileJson, err := json.Marshal(gameProfiles.Client)
 	if err != nil {
-		return "", runtime.NewError(fmt.Sprintf("error marshaling client profile playerData: %v", err), INTERNAL)
+		return nil, runtime.NewError(fmt.Sprintf("error marshaling client profile playerData: %v", err), INTERNAL)
 	}
-	serverProfileJson, err := json.Marshal(playerData.Profile.Server)
+	serverProfileJson, err := json.Marshal(gameProfiles.Server)
 	if err != nil {
-		return "", runtime.NewError(fmt.Sprintf("error marshaling server profile playerData: %v", err), INTERNAL)
+		return nil, runtime.NewError(fmt.Sprintf("error marshaling server profile playerData: %v", err), INTERNAL)
 	}
 
-	// Write the account info to storage using the XplatformID
+	// Write the latest profile data to storage
 	objectIDs := []*runtime.StorageWrite{
 		{
-			Collection:      "Xplatformid",
-			Key:             request.XPlatformId.String(),
+			Collection:      XPLATFORMID_COLLECTION,
+			Key:             request.DeviceId().XPlatformIdStr,
 			UserID:          nkUserId,
-			Value:           string(jsonAccountInfo),
-			PermissionRead:  2,
-			PermissionWrite: 1,
+			Value:           string(jsonRequest),
+			PermissionRead:  0,
+			PermissionWrite: 0,
 		},
 		{
-			Collection:      "Profile",
-			Key:             "client",
+			Collection:      PROFILE_COLLECTION,
+			Key:             PROFILE_CLIENT_KEY,
 			UserID:          nkUserId,
 			Value:           string(clientProfileJson),
 			PermissionRead:  2,
 			PermissionWrite: 0,
 		},
 		{
-			Collection:      "Profile",
-			Key:             "server",
+			Collection:      PROFILE_COLLECTION,
+			Key:             PROFILE_SERVER_KEY,
 			UserID:          nkUserId,
 			Value:           string(serverProfileJson),
 			PermissionRead:  2,
 			PermissionWrite: 0,
 		}}
 
+	// Get the login settings from storage
+	// TODO: extract method
 	var loginSettingsJson []byte
 	// if loginSettings is empty, create a default loginSettings object, and write it storage
 
@@ -396,12 +461,12 @@ func ProcessLoginRequest(ctx context.Context, logger runtime.Logger, db *sql.DB,
 		loginSettings = DefaultLoginSettings()
 		loginSettingsJson, err = json.Marshal(loginSettings)
 		if err != nil {
-			return "", runtime.NewError(fmt.Sprintf("error marshalling LoginSettings: %v", err), INTERNAL)
+			return nil, runtime.NewError(fmt.Sprintf("error marshalling LoginSettings: %v", err), INTERNAL)
 		}
 
 		objectIDs = append(objectIDs, &runtime.StorageWrite{
-			Collection:      "Login:login_settings",
-			Key:             "login_settings",
+			Collection:      LOGIN_SETTINGS_COLLECTION,
+			Key:             LOGIN_SETTINGS_KEY,
 			UserID:          relayUserId,
 			Value:           string(loginSettingsJson),
 			PermissionRead:  2,
@@ -412,23 +477,18 @@ func ProcessLoginRequest(ctx context.Context, logger runtime.Logger, db *sql.DB,
 	_, err = nk.StorageWrite(ctx, objectIDs)
 	if err != nil {
 		logger.WithField("err", err).Error("Storage write error.")
-		return "", runtime.NewError(fmt.Sprintf("error writing profile data: %v", err), INTERNAL)
+		return nil, runtime.NewError(fmt.Sprintf("error writing profile data: %v", err), INTERNAL)
 	}
 
 	loginSuccess := LoginSuccess{
 		XPlatformId:   request.XPlatformId,
-		Session:       sessionGuid.String(),
-		Token:         token,
+		DeviceIdStr:   request.DeviceId().String(),
+		SessionGuid:   sessionGuid.String(),
+		SessionToken:  token,
 		LoginSettings: loginSettings,
-		PlayerData:    playerData,
+		GameProfiles:  gameProfiles,
 	}
 
 	logger.WithField("loginSuccess", loginSuccess).Debug("Login Success.")
-
-	loginSuccessJson, err := json.Marshal(loginSuccess)
-	if err != nil {
-		return "", runtime.NewError(fmt.Sprintf("error marshalling LoginSuccess response: %v", err), INTERNAL)
-	}
-
-	return string(loginSuccessJson), nil
+	return &loginSuccess, nil
 }

@@ -14,23 +14,32 @@ import (
 	"github.com/google/uuid"
 )
 
-func UnmarshalLoginAccountInfo(data []byte) (LoginAccountInfo, error) {
-	var r LoginAccountInfo
+func UnmarshalLoginAccountInfo(data []byte) (LoginData, error) {
+	var r LoginData
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *LoginAccountInfo) Marshal() ([]byte, error) {
+func (r *LoginData) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
 type LoginRequest struct {
-	AccountInfo LoginAccountInfo `json:"account_info"`
-	Session     uuid.UUID        `json:"session_guid"`
-	XPlatformId game.XPlatformID `json:"xplatform_id"`
+	LoginData    LoginData        `json:"login_data"`
+	Session      uuid.UUID        `json:"session_guid"`
+	XPlatformId  game.XPlatformID `json:"xplatform_id"`
+	AuthPassword string           `json:"auth_password"`
 }
 
-type LoginAccountInfo struct {
+func (l *LoginRequest) DeviceId() DeviceId {
+	return DeviceId{
+		AppId:           l.LoginData.AppId,
+		XPlatformIdStr:  l.XPlatformId.String(),
+		HmdSerialNumber: l.LoginData.Hmdserialnumber,
+	}
+}
+
+type LoginData struct {
 	AccountId                   int64            `json:"accountid"`
 	Displayname                 string           `json:"displayname"`
 	Bypassauth                  bool             `json:"bypassauth"`
@@ -38,7 +47,7 @@ type LoginAccountInfo struct {
 	Nonce                       string           `json:"nonce"`
 	Buildversion                int64            `json:"buildversion"`
 	LobbyVersion                int64            `json:"lobbyversion"`
-	Appid                       int64            `json:"appid"`
+	AppId                       int64            `json:"appid"`
 	PublisherLock               string           `json:"publisher_lock"`
 	Hmdserialnumber             string           `json:"hmdserialnumber"`
 	Desiredclientprofileversion int64            `json:"desiredclientprofileversion"`
@@ -95,27 +104,27 @@ type GraphicsSettings struct {
 	Adaptiveresheadroom        float32 `json:"adaptiveresheadroom"`
 	Quality                    Quality `json:"quality"`
 	Msaa                       int64   `json:"msaa"`
-	Sharpening                 float32  `json:"sharpening"`
+	Sharpening                 float32 `json:"sharpening"`
 	Multires                   bool    `json:"multires"`
 	Gamma                      float32 `json:"gamma"`
-	Capturefov                 float32   `json:"capturefov"`
+	Capturefov                 float32 `json:"capturefov"`
 }
 
 type Quality struct {
-	Shadowresolution   int64 `json:"shadowresolution"`
-	Fx                 int64 `json:"fx"`
-	Bloom              bool  `json:"bloom"`
-	Cascaderesolution  int64 `json:"cascaderesolution"`
+	Shadowresolution   int64   `json:"shadowresolution"`
+	Fx                 int64   `json:"fx"`
+	Bloom              bool    `json:"bloom"`
+	Cascaderesolution  int64   `json:"cascaderesolution"`
 	Cascadedistance    float32 `json:"cascadedistance"`
-	Textures           int64 `json:"textures"`
-	Shadowmsaa         int64 `json:"shadowmsaa"`
-	Meshes             int64 `json:"meshes"`
+	Textures           int64   `json:"textures"`
+	Shadowmsaa         int64   `json:"shadowmsaa"`
+	Meshes             int64   `json:"meshes"`
 	Shadowfilterscale  float32 `json:"shadowfilterscale"`
-	Staggerfarcascades bool  `json:"staggerfarcascades"`
-	Volumetrics        bool  `json:"volumetrics"`
-	Lights             int64 `json:"lights"`
-	Shadows            int64 `json:"shadows"`
-	Anims              int64 `json:"anims"`
+	Staggerfarcascades bool    `json:"staggerfarcascades"`
+	Volumetrics        bool    `json:"volumetrics"`
+	Lights             int64   `json:"lights"`
+	Shadows            int64   `json:"shadows"`
+	Anims              int64   `json:"anims"`
 }
 
 type SystemInfo struct {

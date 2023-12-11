@@ -272,8 +272,8 @@ export interface ChannelInfo {
 
 export interface LinkTicket {
     link_code: string;
-    xplatform_id_str: string;
-    hmd_serial_number: string;
+    device_id_str: string;
+    login_request: LoginRequest;
 }
 
 export interface DiscordAccessToken {

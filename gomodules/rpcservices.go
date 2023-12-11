@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"github.com/heroiclabs/nakama-common/runtime"
 
+	"echo-nakama/server/services"
 	"echo-nakama/server/services/login"
 )
 
@@ -36,6 +38,21 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 		logger.Error("Unable to register: %v", err)
 		return err
 	}
+
+	// Register the LinkTicket Index that prevents multiple LinkTickets with the same device_id_str
+	name := login.LINKTICKET_INDEX
+	collection := login.LINKTICKET_COLLECTION
+	key := ""                                               // Set to empty string to match all keys instead
+	fields := []string{"xplatform_id_str", "device_id_str"} // index on these fields
+	maxEntries := 1000000
+	indexOnly := false
+
+	err := initializer.RegisterStorageIndex(name, collection, key, fields, maxEntries, indexOnly)
+	if err != nil {
+		logger.Error("Unable to register storage index: %v", err)
+		return err
+	}
+
 	logger.Info("Initialized module.")
 	return nil
 }
@@ -49,12 +66,25 @@ func LoginRequestRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 		return "", runtime.NewError("Unable to unmarshal payload", INVALID_ARGUMENT)
 	}
 
-	// Process the login request
-	success, err := login.ProcessLoginRequest(ctx, logger, db, nk, &request)
-	if err != nil {
-		logger.WithField("err", err).Error("Login Request Error")
-		return err.Message, err
+	serviceContext := &services.ServiceContext{
+		Ctx:          ctx,
+		Logger:       logger,
+		DbConnection: db,
+		NakamaModule: nk,
 	}
-	return success, nil
+
+	// Process the login request
+	success, nkerr := login.ProcessLoginRequest(serviceContext, &request)
+	if nkerr != nil {
+		logger.WithField("err", nkerr).Error("Login Request Error")
+		return nkerr.Message, nkerr
+	}
+
+	loginSuccessJson, err := json.Marshal(success)
+	if err != nil {
+		return "", runtime.NewError(fmt.Sprintf("error marshalling LoginSuccess response: %v", err), INTERNAL)
+	}
+
+	return string(loginSuccessJson), nil
 
 }

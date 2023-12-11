@@ -156,24 +156,17 @@ function _deleteLinkCode(nk: nkruntime.Nakama, linkTicket: LinkTicket, logger: n
  */
 function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkTicket: LinkTicket,  accessToken: DiscordAccessToken) {
   let accountId = null;
-  let authId = null;
-
-  if (linkTicket.hmd_serial_number != "" && linkTicket.hmd_serial_number != "unknown") {
-    authId = linkTicket.hmd_serial_number;
-    logger.debug("Using serial number");
-  } else {
-    authId = linkTicket.xplatform_id_str;
-  }
+  let deviceId = linkTicket.device_id_str;
 
   let users = nk.usersGetUsername([username]);
   if (users.length == 1) {
     accountId = users[0].userId;
     // Link the device to the account
-    nk.linkDevice(accountId, authId);
+    nk.linkDevice(accountId, deviceId);
   }
 
   try {
-    let authResult = nk.authenticateDevice(authId, null, false);
+    let authResult = nk.authenticateDevice(deviceId, null, false);
     logger.debug("Auth result: %s", authResult);
     accountId = authResult.userId;
 
@@ -183,11 +176,11 @@ function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logg
 
   // Authenticate with the device ID, creating the account if it doesn't exist
   try {
-    let result = nk.authenticateDevice(authId, username, true);
+    let result = nk.authenticateDevice(deviceId, username, true);
     accountId = result.userId;
 
   } catch (error) {
-    logger.error('Failed to authenticate device (%s) to user %s: %s', authId, username, error);
+    logger.error('Failed to authenticate device (%s) to user %s: %s', deviceId, username, error);
     throw errInternal(`Failed to authenticate device: ${error}`);
   }
 
@@ -280,7 +273,6 @@ export function refreshDiscordLink(ctx: nkruntime.Context, nk: nkruntime.Nakama,
       throw errInternal(`Failed to retrieve discord/accessToken: ${error}`);
     }
   }
-
 
   // refresh the access token
   let newAccessToken = {} as DiscordAccessToken;

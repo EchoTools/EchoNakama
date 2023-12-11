@@ -5,30 +5,39 @@ import (
 	"fmt"
 )
 
-type PlayerData struct {
-	Profile         Profile     `json:"profile"`
-	IsModerator     bool        `json:"is_moderator"`
-	BannedUntil     int64       `json:"banned_until"`
-	AccountLockHash interface{} `json:"account_lock_hash"`
-	AccountLockSalt interface{} `json:"account_lock_salt"`
-}
-
-// Profile represents the 'profile' field in the JSON data
-type Profile struct {
+// Profiles represents the 'profile' field in the JSON data
+type GameProfiles struct {
 	Client ClientProfile `json:"client"`
 	Server ServerProfile `json:"server"`
 }
+
+// MergePlayerData merges a partial PlayerData with a template PlayerData.
+func (base *ClientProfile) Merge(partial *ClientProfile) (*ClientProfile, error) {
+
+	partialJSON, err := json.Marshal(partial)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling partial data: %v", err)
+	}
+
+	err = json.Unmarshal(partialJSON, &base)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling partial data: %v", err)
+	}
+
+	return base, nil
+}
+
 type ClientProfile struct {
-	DisplayName   string        `json:"displayname"`
-	XPlatformID   string        `json:"xplatformid"`
-	TeamName      interface{}   `json:"teamname"`
-	Weapon        string        `json:"weapon"`
-	Grenade       string        `json:"grenade"`
-	WeaponArm     int           `json:"weaponarm"`
-	ModifyTime    interface{}   `json:"modifytime"`
-	Ability       string        `json:"ability"`
-	Legal         Legal         `json:"legal"`
-	Temp          interface{}   `json:"temp"`
+	DisplayName string      `json:"displayname"`
+	XPlatformID string      `json:"xplatformid"`
+	TeamName    interface{} `json:"teamname,omitempty"`
+	Weapon      string      `json:"weapon"`
+	Grenade     string      `json:"grenade"`
+	WeaponArm   int         `json:"weaponarm"`
+	ModifyTime  int64       `json:"modifytime"`
+	Ability     string      `json:"ability"`
+	Legal       Legal       `json:"legal"`
+
 	Mute          interface{}   `json:"mute"`
 	NPE           NPE           `json:"npe"`
 	Customization Customization `json:"customization"`
@@ -98,7 +107,12 @@ type ServerProfile struct {
 	Social          interface{}    `json:"social"`
 	Achievements    interface{}    `json:"achievements"`
 	RewardState     interface{}    `json:"reward_state"`
-	Dev             interface{}    `json:"dev"`
+	Dev             DevSection     `json:"dev"`
+}
+
+type DevSection struct {
+	DisableAfkTimeout bool   `json:"disable_afk_timeout"`
+	XPlatformIdStr    string `json:"xplatformid"`
 }
 
 type LevelStatItem struct {
@@ -235,19 +249,13 @@ type LoadoutSlots struct {
 	Emissive       string `json:"emissive"`
 }
 
-func DefaultPlayerData(xplatformid XPlatformID, displayname string) PlayerData {
-	return PlayerData{
-		Profile: Profile{
-			Client: DefaultClientProfile(xplatformid, displayname),
-			Server: DefaultServerProfile(xplatformid, displayname),
-		},
-
-		IsModerator:     false,
-		BannedUntil:     0,
-		AccountLockHash: nil,
-		AccountLockSalt: nil,
+func DefaultGameProfiles(xplatformid XPlatformID, displayname string) GameProfiles {
+	return GameProfiles{
+		Client: DefaultClientProfile(xplatformid, displayname),
+		Server: DefaultServerProfile(xplatformid, displayname),
 	}
 }
+
 func DefaultClientProfile(xplatformid XPlatformID, displayname string) ClientProfile {
 	return ClientProfile{
 		DisplayName: displayname,
@@ -410,32 +418,4 @@ func DefaultServerProfile(xplatformid XPlatformID, displayname string) ServerPro
 		XPlatformID: xplatformid.String(),
 		DisplayName: displayname,
 	}
-}
-
-// MergePlayerData merges a partial PlayerData with a template PlayerData.
-func MergePlayerData(template, partial *PlayerData) (*PlayerData, error) {
-	// Convert PlayerData structs to JSON strings for easier manipulation
-	templateJSON, err := json.Marshal(template)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling template: %v", err)
-	}
-
-	partialJSON, err := json.Marshal(partial)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling partial data: %v", err)
-	}
-
-	// Unmarshal JSON strings back to PlayerData structs
-	var mergedData PlayerData
-	err = json.Unmarshal(templateJSON, &mergedData)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling template: %v", err)
-	}
-
-	err = json.Unmarshal(partialJSON, &mergedData)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling partial data: %v", err)
-	}
-
-	return &mergedData, nil
 }
