@@ -87,7 +87,7 @@ type GraphicsSettings struct {
 	Fullscreen                 bool    `json:"fullscreen"`
 	Display                    int64   `json:"display"`
 	Adaptiverestargetframerate int64   `json:"adaptiverestargetframerate"`
-	Adaptiveresmaxscale        int64   `json:"adaptiveresmaxscale"`
+	Adaptiveresmaxscale        float32 `json:"adaptiveresmaxscale"`
 	Adaptiveresolution         bool    `json:"adaptiveresolution"`
 	Adaptiveresminscale        float32 `json:"adaptiveresminscale"`
 	Resolutionscale            float32 `json:"resolutionscale"`
@@ -95,10 +95,10 @@ type GraphicsSettings struct {
 	Adaptiveresheadroom        float32 `json:"adaptiveresheadroom"`
 	Quality                    Quality `json:"quality"`
 	Msaa                       int64   `json:"msaa"`
-	Sharpening                 int64   `json:"sharpening"`
+	Sharpening                 float32  `json:"sharpening"`
 	Multires                   bool    `json:"multires"`
 	Gamma                      float32 `json:"gamma"`
-	Capturefov                 int64   `json:"capturefov"`
+	Capturefov                 float32   `json:"capturefov"`
 }
 
 type Quality struct {
@@ -106,11 +106,11 @@ type Quality struct {
 	Fx                 int64 `json:"fx"`
 	Bloom              bool  `json:"bloom"`
 	Cascaderesolution  int64 `json:"cascaderesolution"`
-	Cascadedistance    int64 `json:"cascadedistance"`
+	Cascadedistance    float32 `json:"cascadedistance"`
 	Textures           int64 `json:"textures"`
 	Shadowmsaa         int64 `json:"shadowmsaa"`
 	Meshes             int64 `json:"meshes"`
-	Shadowfilterscale  int64 `json:"shadowfilterscale"`
+	Shadowfilterscale  float32 `json:"shadowfilterscale"`
 	Staggerfarcascades bool  `json:"staggerfarcascades"`
 	Volumetrics        bool  `json:"volumetrics"`
 	Lights             int64 `json:"lights"`
