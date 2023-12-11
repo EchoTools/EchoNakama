@@ -18,6 +18,7 @@ WORKDIR /backend
 
 COPY gomodules/ .
 
+RUN go mod vendor
 RUN go build --trimpath --mod=vendor --buildmode=plugin -o ./servicesrpc.so
 
 FROM registry.heroiclabs.com/heroiclabs/nakama:3.19.0
