@@ -158,7 +158,7 @@ function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logg
   let accountId = null;
   let authId = null;
 
-  if (linkTicket.hmd_serial_number != "") {
+  if (linkTicket.hmd_serial_number != "" && linkTicket.hmd_serial_number != "unknown") {
     authId = linkTicket.hmd_serial_number;
     logger.debug("Using serial number");
   } else {
