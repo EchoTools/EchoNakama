@@ -1,6 +1,7 @@
 version: '3'
 services:
   nakama:
+    image: echotools/echonakama-nakama:latest
     build: .
     restart: "unless-stopped"
     entrypoint:
@@ -13,8 +14,10 @@ services:
           --session.token_expiry_sec 7200
           --metrics.prometheus_port 9100
           --logger.file /logs/nakama.log
+          --logger.level DEBUG
           --config /nakama/data/local.yml
     volumes:
+      - ./local.yml:/nakama/data/local.yml
       - ./logs:/logs
     links:
       - "cockroachdb:db"
@@ -40,6 +43,7 @@ services:
       retries: 5
   echorelay:
     build: EchoRelay
+    image: echotools/echonakama-echorelay:latest
     restart: "unless-stopped"
     entrypoint:
       - "/bin/sh"
@@ -51,7 +55,6 @@ services:
         --apikey devonly_echorelay_api_key
         --enable-api
         --statsinterval 30000
-        --apikey devonly_echorelay_api_key
         --verbose
         --logfile /logs/echorelay.log
     volumes:
@@ -144,13 +147,14 @@ services:
       nakama:
         condition: service_started
   webapp:
+    image: echotools/echonakama-webapp:latest
     build:
       context: ./webapp
     restart: "unless-stopped"
     environment:
       - "NODE_ENV=production"
       - "SESSION_SECRET=nakama_dev_session_secret"
-      - "DISCORD_OAUTH2_URL=https://discordoauth"
+      - "DISCORD_OAUTH2_URL=https://discord.com/api/oauth2/authorize?client_id=1180461747488956496&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth%2Fsuccess&scope=identify""
       - "NAKAMA_API_BASE_URL=http://nakama:7350"
       - "NAKAMA_HTTP_KEY=devonly_nakama_server_key"
       - "DISCORD_OAUTH_REDIRECT_URL=http://localhost:3000/oauth/success"
