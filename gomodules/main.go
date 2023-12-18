@@ -86,5 +86,4 @@ func LoginRequestRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 	}
 
 	return string(loginSuccessJson), nil
-
 }
