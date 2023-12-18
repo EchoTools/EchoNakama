@@ -106,7 +106,7 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
 
   // Link the device to the account, or create one if it doesn't exist
   //  
-  let accountId = _LinkOrCreateAccount(ctx, nk, logger, username, linkObject,  accessToken);
+  let accountId = _linkOrCreateAccount(ctx, nk, logger, username, linkObject,  accessToken);
 
   _deleteLinkCode(nk, linkObject, logger);
 
@@ -154,7 +154,7 @@ function _deleteLinkCode(nk: nkruntime.Nakama, linkTicket: LinkTicket, logger: n
  * @param accessToken - The access token.
  * @returns The ID of the linked or created account.
  */
-function _LinkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkTicket: LinkTicket,  accessToken: DiscordAccessToken) {
+function _linkOrCreateAccount(ctx: nkruntime.Context, nk: nkruntime.Nakama, logger: nkruntime.Logger, username: string, linkTicket: LinkTicket,  accessToken: DiscordAccessToken) {
   let accountId = null;
   let deviceId = linkTicket.device_id_str;
 
