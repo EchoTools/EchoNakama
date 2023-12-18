@@ -45,15 +45,5 @@ export function refreshDiscordLinkHook(ctx: nkruntime.Context, logger: nkruntime
     logger.error("Failed to retrieve discord/accessToken: %s", error);
     throw errInternal(`Failed to retrieve discord/accessToken: ${error}`);
   }
-
-  // check that the access token is still valid, and is more than
-  // 24 hours old
-  let now = new Date();
-  let expires = new Date(accessToken.expires_at);
-  let diff = expires.getTime() - now.getTime();
-  let hours = diff / (1000 * 60 * 60);
-  if (hours > 24) {
-    // refresh the access token
     refreshDiscordLink(ctx, nk, logger, userId, accessToken);
-  }
 }
