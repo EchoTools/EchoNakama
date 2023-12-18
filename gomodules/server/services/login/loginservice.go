@@ -375,7 +375,7 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 	}
 
 	// generate a blank playerData object
-	gameProfiles := game.DefaultGameProfiles(request.XPlatformId, request.LoginData.Displayname)
+	gameProfiles := game.DefaultGameProfiles(request.XPlatformId, request.LoginData.DisplayName)
 
 	// read the client profile from the storage layer
 	// TODO: Extact method
