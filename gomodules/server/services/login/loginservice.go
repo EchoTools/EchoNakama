@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 
 	"echo-nakama/game"
 	"echo-nakama/server/services"
@@ -148,6 +151,25 @@ type DeviceId struct {
 
 func (d DeviceId) String() string {
 	return fmt.Sprintf("%d:%s:%s", d.AppId, d.XPlatformIdStr, d.HmdSerialNumber)
+}
+func filterDisplayName(displayName string) string {
+	// Use a regular expression to match allowed characters
+	re := regexp.MustCompile("[^a-zA-Z0-9_-]")
+
+	// Find the index of the first non-ASCII character
+	index := strings.IndexFunc(displayName, func(r rune) bool {
+		return r > unicode.MaxASCII
+	})
+
+	// If non-ASCII character found, truncate the string up to that index
+	if index != -1 {
+		displayName = displayName[:index]
+	}
+
+	// Filter the string using the regular expression
+	filteredUsername := re.ReplaceAllString(displayName, "")
+
+	return filteredUsername
 }
 
 // GenerateLinkCode generates a 4 character random link code.
@@ -407,6 +429,7 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 	gameProfiles.Server.LoginTime = currentTimestamp
 	gameProfiles.Server.ModifyTime = account.User.UpdateTime.Seconds
 	gameProfiles.Server.UpdateTime = account.User.UpdateTime.Seconds
+
 	gameProfiles.Server.DisplayName = account.User.DisplayName
 	gameProfiles.Client.DisplayName = account.User.DisplayName
 
