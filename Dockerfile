@@ -25,4 +25,3 @@ FROM registry.heroiclabs.com/heroiclabs/nakama:3.19.0
 
 COPY --from=go-builder /backend/*.so /nakama/data/modules/
 COPY --from=node-builder /backend/build/*.js /nakama/data/modules/
-COPY local.yml /nakama/data/
