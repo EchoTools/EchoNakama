@@ -25,32 +25,35 @@ func (r *LoginData) Marshal() ([]byte, error) {
 }
 
 type LoginRequest struct {
-	LoginData       LoginData        `json:"login_data"`
-	Session         uuid.UUID        `json:"session_guid"`
-	XPlatformId     game.XPlatformID `json:"xplatform_id"`
-	AuthPassword    string           `json:"auth_password"`
-	HMDSerialNumber string           `json:"hmd_serial_number"`
+	LoginData               LoginData        `json:"login_data"`
+	Session                 uuid.UUID        `json:"session_guid"`
+	XPlatformID             game.XPlatformID `json:"xplatform_id"`
+	AuthPassword            string           `json:"auth_password"`
+	HMDSerialNumberOverride string           `json:"hmd_serial_number_override"`
+	ClientIPAddress         string           `json:"client_ip_address"`
 }
 
-func (l *LoginRequest) DeviceId() DeviceId {
-	return DeviceId{
-		AppId:           l.LoginData.AppId,
-		XPlatformIdStr:  l.XPlatformId.String(),
-		HmdSerialNumber: l.LoginData.HmdSerialNumber,
+// Extract the identifying information used for Device Authentication
+// WARNING: If this is changed, then device "links" will be invalidated
+func (l *LoginRequest) DeviceId() DeviceID {
+	return DeviceID{
+		AppID:           l.LoginData.AppID,
+		XPlatformIDStr:  l.XPlatformID.String(),
+		HMDSerialNumber: l.LoginData.HMDSerialNumber,
 	}
 }
 
 type LoginData struct {
-	AccountId                   int64            `json:"accountid"`
+	AccountID                   int64            `json:"accountid"`
 	DisplayName                 string           `json:"displayname"`
 	BypassAuth                  bool             `json:"bypassauth"`
 	AccessToken                 string           `json:"access_token"`
 	Nonce                       string           `json:"nonce"`
 	BuildVersion                int64            `json:"buildversion"`
 	LobbyVersion                int64            `json:"lobbyversion"`
-	AppId                       int64            `json:"appid"`
+	AppID                       int64            `json:"appid"`
 	PublisherLock               string           `json:"publisher_lock"`
-	HmdSerialNumber             string           `json:"hmdserialnumber"`
+	HMDSerialNumber             string           `json:"hmdserialnumber"`
 	DesiredClientProfileVersion int64            `json:"desiredclientprofileversion"`
 	GameSettings                GameSettings     `json:"game_settings"`
 	SystemInfo                  SystemInfo       `json:"system_info"`
@@ -60,14 +63,14 @@ type LoginData struct {
 type GameSettings struct {
 	Experimentalthrowing int64   `json:"experimentalthrowing"`
 	Smoothrotationspeed  float32 `json:"smoothrotationspeed"`
-	Hud                  bool    `json:"HUD"`
-	VoipMode             int64   `json:"voipmode"`
+	HUD                  bool    `json:"HUD"`
+	VoIPMode             int64   `json:"voipmode"`
 	MatchTagDisplay      bool    `json:"MatchTagDisplay"`
-	EnableNetStatusHud   bool    `json:"EnableNetStatusHUD"`
+	EnableNetStatusHUD   bool    `json:"EnableNetStatusHUD"`
 	EnableGhostAll       bool    `json:"EnableGhostAll"`
 	EnablePitch          bool    `json:"EnablePitch"`
 	EnablePersonalBubble bool    `json:"EnablePersonalBubble"`
-	Releasedistance      float32 `json:"releasedistance"`
+	ReleaseDistance      float32 `json:"releasedistance"`
 	EnableYaw            bool    `json:"EnableYaw"`
 	EnableNetStatusPause bool    `json:"EnableNetStatusPause"`
 	DynamicMusicMode     int64   `json:"dynamicmusicmode"`
@@ -75,50 +78,50 @@ type GameSettings struct {
 	EnableMuteAll        bool    `json:"EnableMuteAll"`
 	EnableMaxLoudness    bool    `json:"EnableMaxLoudness"`
 	EnableSmoothRotation bool    `json:"EnableSmoothRotation"`
-	EnableApiAccess      bool    `json:"EnableAPIAccess"`
+	EnableAPIAccess      bool    `json:"EnableAPIAccess"`
 	EnableMuteEnemyTeam  bool    `json:"EnableMuteEnemyTeam"`
-	EnableVoipLoudness   bool    `json:"EnableVoipLoudness"`
-	VoipLoudnessLevel    int64   `json:"voiploudnesslevel"`
-	VoipModEffect        int64   `json:"voipmodeffect"`
+	EnableVoIPLoudness   bool    `json:"EnableVoipLoudness"`
+	VoIPLoudnessLevel    int64   `json:"voiploudnesslevel"`
+	VoIPModEffect        int64   `json:"voipmodeffect"`
 	PersonalBubbleMode   float32 `json:"personalbubblemode"`
 	Announcer            int64   `json:"announcer"`
 	GhostAllMode         int64   `json:"ghostallmode"`
 	Music                int64   `json:"music"`
 	PersonalBubbleRadius float32 `json:"personalbubbleradius"`
-	Sfx                  int64   `json:"sfx"`
-	Voip                 int64   `json:"voip"`
+	SFX                  int64   `json:"sfx"`
+	VoIP                 int64   `json:"voip"`
 	GrabDeadZone         float32 `json:"grabdeadzone"`
 	WristAngleOffset     float32 `json:"wristangleoffset"`
 	MuteAllMode          int64   `json:"muteallmode"`
 }
 
 type GraphicsSettings struct {
-	TemporalAa                 bool    `json:"temporalaa"`
-	Fullscreen                 bool    `json:"fullscreen"`
-	Display                    int64   `json:"display"`
-	AdaptiveResTargetFramerate int64   `json:"adaptiverestargetframerate"`
-	AdaptiveResMaxScale        float32 `json:"adaptiveresmaxscale"`
-	AdaptiveResolution         bool    `json:"adaptiveresolution"`
-	AdaptiveResMinScale        float32 `json:"adaptiveresminscale"`
-	ResolutionScale            float32 `json:"resolutionscale"`
-	QualityLevel               int64   `json:"qualitylevel"`
-	AdaptiveResHeadroom        float32 `json:"adaptiveresheadroom"`
-	Quality                    Quality `json:"quality"`
-	Msaa                       int64   `json:"msaa"`
-	Sharpening                 float32 `json:"sharpening"`
-	MultiRes                   bool    `json:"multires"`
-	Gamma                      float32 `json:"gamma"`
-	CaptureFov                 float32 `json:"capturefov"`
+	TemporalAA                        bool    `json:"temporalaa"`
+	Fullscreen                        bool    `json:"fullscreen"`
+	Display                           int64   `json:"display"`
+	ResolutionScale                   float32 `json:"resolutionscale"`
+	AdaptiveResolutionTargetFramerate int64   `json:"adaptiverestargetframerate"`
+	AdaptiveResolutionMaxScale        float32 `json:"adaptiveresmaxscale"`
+	AdaptiveResolution                bool    `json:"adaptiveresolution"`
+	AdaptiveResolutionMinScale        float32 `json:"adaptiveresminscale"`
+	AdaptiveResolutionHeadroom        float32 `json:"adaptiveresheadroom"`
+	QualityLevel                      int64   `json:"qualitylevel"`
+	Quality                           Quality `json:"quality"`
+	MSAA                              int64   `json:"msaa"`
+	Sharpening                        float32 `json:"sharpening"`
+	MultiResolution                   bool    `json:"multires"`
+	Gamma                             float32 `json:"gamma"`
+	CaptureFOV                        float32 `json:"capturefov"`
 }
 
 type Quality struct {
 	ShadowResolution   int64   `json:"shadowresolution"`
-	Fx                 int64   `json:"fx"`
+	FX                 int64   `json:"fx"`
 	Bloom              bool    `json:"bloom"`
 	CascadeResolution  int64   `json:"cascaderesolution"`
 	CascadeDistance    float32 `json:"cascadedistance"`
 	Textures           int64   `json:"textures"`
-	ShadowMsaa         int64   `json:"shadowmsaa"`
+	ShadowMSAA         int64   `json:"shadowmsaa"`
 	Meshes             int64   `json:"meshes"`
 	ShadowFilterScale  float32 `json:"shadowfilterscale"`
 	StaggerFarCascades bool    `json:"staggerfarcascades"`
@@ -133,10 +136,10 @@ type SystemInfo struct {
 	DriverVersion      string `json:"driver_version"`
 	NetworkType        string `json:"network_type"`
 	VideoCard          string `json:"video_card"`
-	Cpu                string `json:"cpu"`
+	CPU                string `json:"cpu"`
 	NumPhysicalCores   int64  `json:"num_physical_cores"`
 	NumLogicalCores    int64  `json:"num_logical_cores"`
 	MemoryTotal        int64  `json:"memory_total"`
 	MemoryUsed         int64  `json:"memory_used"`
-	DedicatedGpuMemory int64  `json:"dedicated_gpu_memory"`
+	DedicatedGPUMemory int64  `json:"dedicated_gpu_memory"`
 }

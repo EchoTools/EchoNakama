@@ -40,8 +40,8 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	}
 
 	// Register the LinkTicket Index that prevents multiple LinkTickets with the same device_id_str
-	name := login.LINKTICKET_INDEX
-	collection := login.LINKTICKET_COLLECTION
+	name := login.LinkTicketIndex
+	collection := login.LinkTicketCollection
 	key := ""                                               // Set to empty string to match all keys instead
 	fields := []string{"xplatform_id_str", "device_id_str"} // index on these fields
 	maxEntries := 1000000
