@@ -8,8 +8,8 @@ import (
 
 	"github.com/heroiclabs/nakama-common/runtime"
 
-	"echo-nakama/server/services"
-	"echo-nakama/server/services/login"
+	"echonakama/server/services"
+	"echonakama/server/services/login"
 )
 
 const (

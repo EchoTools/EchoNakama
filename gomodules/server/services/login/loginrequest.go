@@ -9,51 +9,56 @@ package login
 import (
 	"encoding/json"
 
-	"echo-nakama/game"
+	"echonakama/game"
 
 	"github.com/google/uuid"
 )
 
-func UnmarshalLoginAccountInfo(data []byte) (LoginData, error) {
-	var r LoginData
+func UnmarshalLoginAccountInfo(data []byte) (LoginMetadata, error) {
+	var r LoginMetadata
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
 
-func (r *LoginData) Marshal() ([]byte, error) {
+func (r *LoginMetadata) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+// This is sent by the relay to login a connected game client/broadcaster
 type LoginRequest struct {
-	LoginData               LoginData        `json:"login_data"`
-	Session                 uuid.UUID        `json:"session_guid"`
-	XPlatformID             game.XPlatformID `json:"xplatform_id"`
-	AuthPassword            string           `json:"auth_password"`
-	HMDSerialNumberOverride string           `json:"hmd_serial_number_override"`
-	ClientIPAddress         string           `json:"client_ip_address"`
+	Metadata                LoginMetadata   `json:"metadata"`                   // the metadata sent by the game client
+	SessionGuid             uuid.UUID       `json:"echo_session_guid"`          // the session guid sent by the game client
+	EchoUserId              game.EchoUserId `json:"echo_user_id"`               // the game user id sent by the game client
+	UserPassword            string          `json:"user_password"`              // the password query param set in the config.json
+	HmdSerialNumberOverride string          `json:"hmd_serial_number_override"` // the hmd serial number override query param set in the config.json
+	DisplayNameOverride     string          `json:"display_name_override"`      // the display name override query param set in the config.json
+	ClientIpAddress         string          `json:"client_ip_address"`          // the client ip address
 }
 
 // Extract the identifying information used for Device Authentication
 // WARNING: If this is changed, then device "links" will be invalidated
-func (l *LoginRequest) DeviceId() DeviceID {
-	return DeviceID{
-		AppID:           l.LoginData.AppID,
-		XPlatformIDStr:  l.XPlatformID.String(),
-		HMDSerialNumber: l.LoginData.HMDSerialNumber,
+func (l *LoginRequest) DeviceId() DeviceId {
+	return DeviceId{
+		AppId:           l.Metadata.AppId,
+		UserIdToken:     l.EchoUserId.String(),
+		HmdSerialNumber: l.Metadata.HmdSerialNumber,
 	}
 }
 
-type LoginData struct {
-	AccountID                   int64            `json:"accountid"`
+// This is the payload sent by the game client to the relay
+
+type LoginMetadata struct {
+	// WARNING: EchoVR dictates this schema.
+	AccountId                   int64            `json:"accountid"`
 	DisplayName                 string           `json:"displayname"`
 	BypassAuth                  bool             `json:"bypassauth"`
 	AccessToken                 string           `json:"access_token"`
 	Nonce                       string           `json:"nonce"`
 	BuildVersion                int64            `json:"buildversion"`
 	LobbyVersion                int64            `json:"lobbyversion"`
-	AppID                       int64            `json:"appid"`
+	AppId                       int64            `json:"appid"`
 	PublisherLock               string           `json:"publisher_lock"`
-	HMDSerialNumber             string           `json:"hmdserialnumber"`
+	HmdSerialNumber             string           `json:"hmdserialnumber"`
 	DesiredClientProfileVersion int64            `json:"desiredclientprofileversion"`
 	GameSettings                GameSettings     `json:"game_settings"`
 	SystemInfo                  SystemInfo       `json:"system_info"`
@@ -61,6 +66,7 @@ type LoginData struct {
 }
 
 type GameSettings struct {
+	// WARNING: EchoVR dictates this schema.
 	Experimentalthrowing int64   `json:"experimentalthrowing"`
 	Smoothrotationspeed  float32 `json:"smoothrotationspeed"`
 	HUD                  bool    `json:"HUD"`
@@ -96,6 +102,7 @@ type GameSettings struct {
 }
 
 type GraphicsSettings struct {
+	// WARNING: EchoVR dictates this schema.
 	TemporalAA                        bool    `json:"temporalaa"`
 	Fullscreen                        bool    `json:"fullscreen"`
 	Display                           int64   `json:"display"`
@@ -115,6 +122,7 @@ type GraphicsSettings struct {
 }
 
 type Quality struct {
+	// WARNING: EchoVR dictates this schema.
 	ShadowResolution   int64   `json:"shadowresolution"`
 	FX                 int64   `json:"fx"`
 	Bloom              bool    `json:"bloom"`
@@ -132,6 +140,7 @@ type Quality struct {
 }
 
 type SystemInfo struct {
+	// WARNING: EchoVR dictates this schema.
 	HeadsetType        string `json:"headset_type"`
 	DriverVersion      string `json:"driver_version"`
 	NetworkType        string `json:"network_type"`

@@ -120,7 +120,7 @@ let discordLinkDeviceRpc: nkruntime.RpcFunction = function (ctx: nkruntime.Conte
   }
 
   // Update the user's info
-  _.merge(account.user.metadata, { discord: { user: discordUser, oauth: accessToken } });
+  //_.merge(account.user.metadata, { discord: { user: discordUser, oauth: accessToken } });
 
   // Retrieve and return the link code for the device.
   return JSON.stringify({ "success": true });

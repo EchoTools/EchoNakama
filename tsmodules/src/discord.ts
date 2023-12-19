@@ -78,6 +78,7 @@ export function discordGetCurrentUser(ctx: nkruntime.Context, nk: nkruntime.Naka
       'Accept': 'application/json'
     }, null);
 
+  
   if (response.code != 200) {
     logger.error("Discord user lookup failed: %s", response.body);
     throw errInternal(`Discord user lookup failed: ${response.body}`);

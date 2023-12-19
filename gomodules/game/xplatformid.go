@@ -1,4 +1,3 @@
-// Package main provides functionality for working with platform identifiers in the game.
 package game
 
 import (
@@ -7,8 +6,8 @@ import (
 	"strings"
 )
 
-// XPlatformID represents an identifier for a user on the platform.
-type XPlatformID struct {
+// EchoUserId represents an identifier for a user on the platform.
+type EchoUserId struct {
 	PlatformCode PlatformCode `json:"platform_code"`
 	AccountId    uint64       `json:"account_id"`
 }
@@ -16,23 +15,12 @@ type XPlatformID struct {
 // Constants
 //const xPlatformIdSize = 16
 
-// NewXPlatformId initializes a new XPlatformId.
-func NewXPlatformId(platformCode PlatformCode, accountId uint64) *XPlatformID {
-	// Implementation for initializing a new XPlatformId goes here
-	// ...
-
-	return &XPlatformID{
-		PlatformCode: platformCode,
-		AccountId:    accountId,
-	}
-}
-
-func (xpi *XPlatformID) Valid() bool {
-	return xpi.PlatformCode != 0
+func (xpi *EchoUserId) Valid() bool {
+	return xpi.PlatformCode > STM && xpi.PlatformCode < TEN && xpi.AccountId > 0
 }
 
 // Parse parses a string into a given platform identifier.
-func (xpi *XPlatformID) Parse(s string) (*XPlatformID, error) {
+func (xpi *EchoUserId) Parse(s string) (*EchoUserId, error) {
 	// Obtain the position of the last dash.
 	dashIndex := strings.LastIndex(s, "-")
 	if dashIndex < 0 {
@@ -53,10 +41,13 @@ func (xpi *XPlatformID) Parse(s string) (*XPlatformID, error) {
 	}
 
 	// Create the identifier
-	platformId := &XPlatformID{PlatformCode: platformCode, AccountId: accountId}
+	platformId := &EchoUserId{PlatformCode: platformCode, AccountId: accountId}
 	return platformId, nil
 }
 
-func (xpi *XPlatformID) String() string {
+func (xpi *EchoUserId) String() string {
+	return fmt.Sprintf("%s-%d", xpi.PlatformCode.String(), xpi.AccountId)
+}
+func (xpi *EchoUserId) Token() string {
 	return fmt.Sprintf("%s-%d", xpi.PlatformCode.String(), xpi.AccountId)
 }
