@@ -19,7 +19,7 @@ WORKDIR /backend
 COPY gomodules/ .
 
 RUN go mod vendor
-RUN go build --trimpath --mod=vendor --buildmode=plugin -o ./servicesrpc.so
+RUN go build --trimpath --mod=vendor --buildmode=plugin -o ./echovr-backend.so
 
 FROM registry.heroiclabs.com/heroiclabs/nakama:3.20.0
 

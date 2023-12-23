@@ -21,8 +21,13 @@ runtime:
   # usually a uuid4
   http_key: devonly_nakama_http_key
   env:
-    - "DISCORD_CLIENT_ID=12345678901234567890"
-    - "DISCORD_CLIENT_SECRET=SomeSecretClientSecret"
+    - "SESSION_ENCRYPTION_KEY=devonly_nakama_encryption_key"
+    - "DISCORD_CLIENT_ID=1180461747180461796"
+    - "DISCORD_CLIENT_SECRET=ySQAeiSSdxRi5TWeJ3AeiSSdxRi5U5Opf"
+    - "DISCORD_BOT_TOKEN=MTE4MDQ2MTc0NzQ4ODk1NjQ5Ng.G4LzSq.I2MTc0NzQ4ODk1Njn89Jjna07oVjiJSsWGqy6QKZQ"
+    - "DISCORD_BOT_GUILD=779349159852769310"
+    - "DISCORD_PUBLIC_KEY=f70a6abe891cdf8b01909afea856fa6abe891cdf8b01909df3e135772ee1a79c4e17"
+    - "LINK_PAGE_URL=http://localhost:3000/link"
 console:
   # Replace these with a secure username and password.
   port: 7351

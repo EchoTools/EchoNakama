@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+func NewEchoUserId(platformCode PlatformCode, accountId uint64) *EchoUserId {
+	return &EchoUserId{PlatformCode: platformCode, AccountId: accountId}
+}
+
 // EchoUserId represents an identifier for a user on the platform.
 type EchoUserId struct {
 	PlatformCode PlatformCode `json:"platform_code"`
@@ -48,6 +52,19 @@ func (xpi *EchoUserId) Parse(s string) (*EchoUserId, error) {
 func (xpi *EchoUserId) String() string {
 	return fmt.Sprintf("%s-%d", xpi.PlatformCode.String(), xpi.AccountId)
 }
+
 func (xpi *EchoUserId) Token() string {
 	return fmt.Sprintf("%s-%d", xpi.PlatformCode.String(), xpi.AccountId)
+}
+
+func (xpi *EchoUserId) Equal(other *EchoUserId) bool {
+	return xpi.PlatformCode == other.PlatformCode && xpi.AccountId == other.AccountId
+}
+
+func (xpi *EchoUserId) IsEmpty() bool {
+	return xpi.PlatformCode == 0 && xpi.AccountId == 0
+}
+
+func (xpi *EchoUserId) IsNotEmpty() bool {
+	return xpi.PlatformCode != 0 && xpi.AccountId != 0
 }

@@ -4,37 +4,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"regexp"
-	"strings"
 	"time"
-	"unicode"
 
 	"echonakama/game"
 	"echonakama/server/services"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
 	"github.com/heroiclabs/nakama-common/api"
 	"github.com/heroiclabs/nakama-common/runtime"
 )
 
 const (
-	SystemUserId           = "00000000-0000-0000-0000-000000000000"
-	PlaceholderEmailSuffix = "@null.echovrce.com"
+	SystemUserId = "00000000-0000-0000-0000-000000000000"
 
 	PasswordURLParam          = "password"
 	HMDSerialOverrideURLParam = "hmdserial"
 
-	LinkingPageUrl = "https://echovrce.com/link"
-
 	LinkTicketCollection                = "Login:linkTicket"
 	LinkTicketIndex                     = "Index_" + LinkTicketCollection
 	DiscordAccessTokenCollection        = "Login:discordAccessToken"
+	DiscordAccessTokenKey               = "accessToken"
 	GameClientSettingsStorageCollection = "Login:gameSettings"
 	GameClientSettingsStorageKey        = "gameSettings"
 	GameProfileStorageCollection        = "Profile"
 	ServerGameProfileStorageKey         = "server"
 	ClientGameProfileStorageKey         = "client"
-	XPlatformIdStorageCollection        = "XPlatformID"
+	XPlatformIdStorageCollection        = "XPlatformId"
+	IpAddressIndex                      = "Index_" + XPlatformIdStorageCollection
 
 	// The Application ID for Echo VR
 	NoOvrAppId = 0
@@ -61,235 +58,6 @@ const (
 	StatusUnauthenticated    = 16 // StatusUnauthenticated indicates the request lacks valid authentication credentials.
 )
 
-// The data sent to the relay when a client is sucessfully authenticated/authorized.
-type LoginSuccessResponse struct {
-	EchoUserId         game.EchoUserId         `json:"echo_user_id"`
-	DeviceAuthToken    string                  `json:"nk_device_auth_token"`
-	EchoSessionToken   string                  `json:"echo_session_token"`
-	NkSessionToken     string                  `json:"nk_session_token"`
-	EchoClientSettings game.EchoClientSettings `json:"client_settings"`
-	GameProfiles       game.GameProfiles       `json:"game_profiles"`
-}
-
-// LinkTicket represents a ticket used for linking accounts to Discord.
-// It contains the link code, xplatform ID string, and HMD serial number.
-type LinkTicket struct {
-	Code            string `json:"link_code"`            // the code the user will exchange to link the account
-	DeviceAuthToken string `json:"nk_device_auth_token"` // the device ID token to be linked
-
-	// NOTE: The UserIDToken has an index that is created in the InitModule function
-	UserIDToken  string        `json:"game_user_id_token"` // the xplatform ID used by EchoVR as a UserID
-	LoginRequest *LoginRequest `json:"game_login_request"` // the login request payload that generated this link ticket
-}
-
-func (l *LinkTicket) StorageObject() (*runtime.StorageWrite, error) {
-	linkTicketJson, err := json.Marshal(l)
-	if err != nil {
-		return nil, err
-	}
-
-	return &runtime.StorageWrite{
-		Collection:      LinkTicketCollection,
-		Key:             l.Code,
-		UserID:          SystemUserId,
-		Value:           string(linkTicketJson),
-		PermissionRead:  0,
-		PermissionWrite: 0,
-		Version:         "*", // do not overwrite existing link tickets
-	}, nil
-}
-
-// The data used to generate the Device ID authentication string.
-type DeviceId struct {
-	AppId           int64  `json:"game_app_id"`        // The application ID for the game
-	UserIdToken     string `json:"game_user_id_token"` // The xplatform ID string
-	HmdSerialNumber string `json:"hmd_serial_number"`  // The HMD serial number
-}
-
-// Generate the string used for device authentication
-// WARNING: If this is changed, then device "links" will be invalidated
-func (d DeviceId) Token() string {
-	return fmt.Sprintf("%d:%s:%s", d.AppId, d.UserIdToken, d.HmdSerialNumber)
-}
-
-func filterDisplayName(displayName string) string {
-	// Use a regular expression to match allowed characters
-	re := regexp.MustCompile("[^a-zA-Z0-9_-]")
-
-	// Find the index of the first non-ASCII character
-	index := strings.IndexFunc(displayName, func(r rune) bool {
-		return r > unicode.MaxASCII
-	})
-
-	// If non-ASCII character found, truncate the string up to that index
-	if index != -1 {
-		displayName = displayName[:index]
-	}
-
-	// Filter the string using the regular expression
-	filteredUsername := re.ReplaceAllString(displayName, "")
-
-	return filteredUsername
-}
-
-// GenerateLinkCode generates a 4 character random link code.
-// The character set excludes homoglyphs.
-// The random number generator is seeded with the current time to ensure randomness.
-// Returns the generated link code as a string.
-func GenerateLinkCode() string {
-	// Define the set of valid characters for the link code
-	characters := "ABCDEFGHJKLMNPRSTUVWXYZ"
-
-	// Create a new local random generator with a known seed value
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	// Create an array with 4 elements
-	var indices []int
-	for i := 0; i < 4; i++ {
-		indices = append(indices, i)
-	}
-
-	// Randomly select an index from the array and generate the code
-	var code string
-	for range indices {
-		code += string(characters[rng.Intn(len(characters))])
-	}
-
-	return code
-}
-
-// LinkTicket generates a link ticket for the provided xplatformId and hmdSerialNumber.
-func (request *LoginRequest) LinkTicket(serviceContext *services.ServiceContext, userID string) (*LinkTicket, *runtime.Error) {
-	linkTicket := &LinkTicket{}
-	ctx := serviceContext.Ctx
-	nk := serviceContext.NakamaModule
-	logger := serviceContext.Logger
-	// Check if a link ticket already exists for the provided xplatformId and hmdSerialNumber
-	objectIDs, err := nk.StorageIndexList(ctx, SystemUserId, LinkTicketIndex, fmt.Sprintf("+value.game_user_id_token:%s", request.DeviceId().UserIdToken), 10)
-	if err != nil {
-		return nil, runtime.NewError(fmt.Sprintf("error listing link tickets: `%q`  %v", request.DeviceId().UserIdToken, err), StatusInternalError)
-	}
-	logger.WithField("objectIds", objectIDs).Debug("Link ticket found/generated.")
-	// Link ticket was found. Return the link ticket.
-	if objectIDs != nil {
-		for _, record := range objectIDs.Objects {
-			json.Unmarshal([]byte(record.Value), &linkTicket)
-
-			return linkTicket, nil
-		}
-	}
-
-	// Generate a link code and attempt to write it to storage
-	for {
-
-		// loop until we have a unique link code
-		linkTicket = &LinkTicket{
-			Code:            GenerateLinkCode(),
-			DeviceAuthToken: request.DeviceId().Token(),
-			UserIDToken:     request.DeviceId().UserIdToken,
-			LoginRequest:    request,
-		}
-
-		linkTicketStorageObject, err := linkTicket.StorageObject()
-		if err != nil {
-			return nil, runtime.NewError(fmt.Sprintf("error preparing link ticket storage object: %v", err), StatusInternalError)
-		}
-
-		// Write the link code to storage
-		objectIDs := []*runtime.StorageWrite{
-			linkTicketStorageObject,
-		}
-
-		_, err = nk.StorageWrite(ctx, objectIDs)
-
-		if err != nil {
-			continue
-		}
-		return linkTicket, nil
-	}
-}
-
-// authenticateClient is a function that authenticates a client using the provided service context and login request.
-// It returns the Nakama user ID, username, and any error that occurred during authentication.
-func authenticateAccountDevice(serviceContext *services.ServiceContext, loginRequest *LoginRequest, authPassword string) (*api.Account, *runtime.Error) {
-	ctx := serviceContext.Ctx
-	nk := serviceContext.NakamaModule
-	logger := serviceContext.Logger
-	var nkUserID string
-	var err error
-	UserIdToken := loginRequest.EchoUserId.String()
-
-	// Validate the user identifier
-	if !loginRequest.EchoUserId.Valid() {
-		return nil, runtime.NewError(fmt.Sprintf("invalid Game User ID: %q", UserIdToken), StatusInvalidArgument)
-	}
-
-	nkUserID, _, _, err = nk.AuthenticateDevice(ctx, loginRequest.DeviceId().Token(), "", false)
-	if err != nil { // account is missing, this is okay.
-		logger.WithField("err", err).WithField("device_auth_token", loginRequest.DeviceId().Token()).Debug("Device not linked.")
-		err = nil
-	}
-
-	// If the account is not linked, create a link ticket and return an error
-	if nkUserID == "" {
-		// No Account. Create link ticket and return error
-		linkTicket, err := loginRequest.LinkTicket(serviceContext, SystemUserId)
-		if err != nil {
-			logger.WithField("err", err).Error("unable to generate link ticket.")
-			return nil, runtime.NewError(fmt.Sprintf("unable to generate link ticket: %q", UserIdToken), StatusInternalError)
-		}
-		logger.WithField("linkTicket", linkTicket).Debug("Link ticket found/generated.")
-		return nil, runtime.NewError(fmt.Sprintf("visit %s and enter code: %s", LinkingPageUrl, linkTicket.Code), StatusNotFound)
-
-	}
-
-	// Authorize the authenticated account
-	account, err := nk.AccountGetId(ctx, nkUserID)
-	if err != nil {
-		return nil, runtime.NewError(fmt.Sprintf("unable to get account for Id: %q", UserIdToken), StatusInternalError)
-	}
-
-	// Check if the account is disabled/banned
-	if account.GetDisableTime() != nil {
-		return nil, runtime.NewError(fmt.Sprintf("account Permanently Banned: %q", UserIdToken), StatusPermissionDenied)
-	}
-
-	// If the account has a password set, authenticate the 'auth=' query param as the password
-
-	if account.Email != "" {
-
-		_, _, _, err = nk.AuthenticateEmail(ctx, account.Email, authPassword, "", false)
-		if err != nil {
-			return nil, runtime.NewError(fmt.Sprintf("invalid password for account: %q", UserIdToken), StatusUnauthenticated)
-		}
-	} else if authPassword != "" {
-		// if the 'auth=' query param is set, set the password to the 'auth=' query param
-		nk.LinkEmail(ctx, nkUserID, account.User.Id+PlaceholderEmailSuffix, authPassword)
-		if err != nil {
-			return nil, runtime.NewError(fmt.Sprintf("unable to set password for account: %q", UserIdToken), StatusInternalError)
-		}
-	}
-
-	// reauthenticate with custom device auth token
-	_, _, _, err = nk.AuthenticateDevice(ctx, loginRequest.DeviceId().Token(), "", false)
-	if err != nil {
-		return nil, runtime.NewError(fmt.Sprintf("invalid device auth token for account: %q", UserIdToken), StatusUnauthenticated)
-	}
-
-	if account.CustomId == "" {
-		// if the account does not have a customId, return nothing, and let the client know that they need to link their account
-		return nil, runtime.NewError(fmt.Sprintf("account (%q) not linked to Discord. visit %s", UserIdToken, LinkingPageUrl), StatusInternalError)
-	}
-	// verify that the account has a valid customId by authenticating to it (this activates the validation/refresh hook)
-	// if the account does not have a valid customId, this will return an error
-	_, _, _, err = nk.AuthenticateCustom(ctx, account.CustomId, "", false)
-	if err != nil {
-		return nil, runtime.NewError(fmt.Sprintf("discord link is invalid. visit %s", LinkingPageUrl), StatusInternalError)
-	}
-
-	return account, nil
-}
-
 // ProcessLoginRequest processes a login request and returns the login success response or an error.
 // It returns a string representing the login success response and a *runtime.Error object if there is an error.
 func ProcessLoginRequest(serviceContext *services.ServiceContext, request *LoginRequest) (*LoginSuccessResponse, *runtime.Error) {
@@ -297,7 +65,7 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 	logger := serviceContext.Logger
 	nk := serviceContext.NakamaModule
 
-	// immediately pop the password out of the requests to avoid
+	// immediately strip the password out of the requests to avoid
 	// displaying it in the logs
 	authPassword := request.UserPassword
 	request.UserPassword = ""
@@ -312,7 +80,7 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 		return nil, runtime.NewError("relay must authenticate", StatusUnauthenticated)
 	}
 
-	logger.WithField("relayUserName", relayUserName).WithField("request", request).Debug("Processing login request.")
+	logger.WithField("relayUserName", relayUserName).Debug("Processing login request for user %s on relay %s", request.EchoUserId, relayNkUserID)
 
 	account, nkerr := authenticateAccountDevice(serviceContext, request, authPassword)
 	if nkerr != nil {
@@ -383,11 +151,10 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 	}
 
 	// Update the server profile's logintime and updatetime.
-	gameProfiles.Server.LobbyVersion = int64(request.Metadata.LobbyVersion)
+	gameProfiles.Server.LobbyVersion = request.Metadata.LobbyVersion
 	gameProfiles.Server.LoginTime = currentTimestamp
 	gameProfiles.Server.ModifyTime = account.User.UpdateTime.Seconds
 	gameProfiles.Server.UpdateTime = account.User.UpdateTime.Seconds
-
 	gameProfiles.Server.DisplayName = account.User.DisplayName
 	gameProfiles.Client.DisplayName = account.User.DisplayName
 
@@ -421,7 +188,7 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 			Key:             ClientGameProfileStorageKey,
 			UserID:          playerNkUserID,
 			Value:           string(clientProfileJson),
-			PermissionRead:  2,
+			PermissionRead:  1,
 			PermissionWrite: 0,
 		},
 		{
@@ -455,7 +222,6 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 			PermissionWrite: 0,
 		})
 	}
-
 	_, err = nk.StorageWrite(ctx, objectIDs)
 	if err != nil {
 		logger.WithField("err", err).Error("storage write error.")
@@ -471,6 +237,198 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 		GameProfiles:       gameProfiles,
 	}
 
-	logger.WithField("loginSuccess", loginSuccess).Debug("Login Success.")
+	logger.Debug("Logged %s in successfully.", gameProfiles.Server.DisplayName)
 	return &loginSuccess, nil
+}
+
+// GenerateLinkCode generates a 4 character random link code.
+// The character set excludes homoglyphs.
+// The random number generator is seeded with the current time to ensure randomness.
+// Returns the generated link code as a string.
+func GenerateLinkCode() string {
+	// Define the set of valid characters for the link code
+	characters := "ABCDEFGHJKLMNPRSTUVWXYZ"
+
+	// Create a new local random generator with a known seed value
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Create an array with 4 elements
+	var indices []int
+	for i := 0; i < 4; i++ {
+		indices = append(indices, i)
+	}
+
+	// Randomly select an index from the array and generate the code
+	var code string
+	for range indices {
+		code += string(characters[rng.Intn(len(characters))])
+	}
+
+	return code
+}
+
+// authenticateClient is a function that authenticates a client using the provided service context and login request.
+// It returns the Nakama user ID, username, and any error that occurred during authentication.
+func authenticateAccountDevice(serviceContext *services.ServiceContext, loginRequest *LoginRequest, authPassword string) (*api.Account, *runtime.Error) {
+	ctx := serviceContext.Ctx
+	nk := serviceContext.NakamaModule
+	logger := serviceContext.Logger
+
+	// Get the linking page url from the environment
+	vars, _ := ctx.Value(runtime.RUNTIME_CTX_ENV).(map[string]string)
+	linkingPageUrl := vars["LINK_PAGE_URL"]
+	placeholderEmailDomain := vars["PLACEHOLDER_EMAIL_DOMAIN"]
+	var nkUserId string
+	var err error
+	UserIdToken := loginRequest.EchoUserId.String()
+
+	// Validate the user identifier
+	if !loginRequest.EchoUserId.Valid() {
+		return nil, runtime.NewError(fmt.Sprintf("invalid Game User ID: %q", UserIdToken), StatusInvalidArgument)
+	}
+
+	// Check if the account is linked
+	nkUserId, _, _, err = nk.AuthenticateDevice(ctx, loginRequest.DeviceId().Token(), "", false)
+	if err != nil { // account is missing, this is okay.
+		logger.WithField("err", err).WithField("device_auth_token", loginRequest.DeviceId().Token()).Debug("Device not linked.")
+		err = nil
+	}
+
+	// If the account is not linked, create a link ticket and return an error
+	if nkUserId == "" {
+		// No Account. Create link ticket and return error
+		linkTicket, err := loginRequest.LinkTicket(serviceContext, SystemUserId)
+		if err != nil {
+			logger.WithField("err", err).Error("unable to generate link ticket.")
+			return nil, runtime.NewError(fmt.Sprintf("unable to generate link ticket: %q", UserIdToken), StatusInternalError)
+		}
+		logger.WithField("linkTicket", linkTicket).Debug("Link ticket found/generated.")
+		return nil, runtime.NewError(fmt.Sprintf("visit %s and enter code: %s", linkingPageUrl, linkTicket.Code), StatusNotFound)
+
+	}
+
+	// Authorize the authenticated account
+	account, err := nk.AccountGetId(ctx, nkUserId)
+	if err != nil {
+		return nil, runtime.NewError(fmt.Sprintf("unable to get account for Id: %q", UserIdToken), StatusInternalError)
+	}
+
+	// Check if the account is disabled/banned
+	if account.GetDisableTime() != nil {
+		return nil, runtime.NewError(fmt.Sprintf("account Permanently Banned: %q", UserIdToken), StatusPermissionDenied)
+	}
+
+	// Authenticate if hte accounts has a password set (i.e. an email is set)
+	if account.Email != "" {
+		_, _, _, err = nk.AuthenticateEmail(ctx, account.Email, authPassword, "", false)
+		if err != nil {
+			return nil, runtime.NewError(fmt.Sprintf("invalid password for account: %q", UserIdToken), StatusUnauthenticated)
+		}
+
+	} else if authPassword != "" {
+		// if the login contains a password, but there is no password set. set the password.
+		err = nk.LinkEmail(ctx, nkUserId, account.User.Id+"@"+placeholderEmailDomain, authPassword)
+		if err != nil {
+			return nil, runtime.NewError(fmt.Sprintf("unable to set password for account: %q", UserIdToken), StatusInternalError)
+		}
+	}
+
+	if account.CustomId == "" {
+		// if the account does not have a customId, the account needs to be linked to discord.
+		// return nothing, and let the client know that they need to link their account
+		return nil, runtime.NewError(fmt.Sprintf("Re-link %s at %s", UserIdToken, linkingPageUrl), StatusInternalError)
+	}
+
+	// get the discord access token from storage
+	accessToken, err := ReadAccessTokenFromStorage(ctx, logger, nk, account.User.Id, vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"])
+	if err != nil {
+		logger.Warn("error reading discord access token from storage: %v", err)
+		return nil, runtime.NewError("error reading discord access token from storage", StatusInternalError)
+	}
+	if accessToken == nil {
+		return nil, runtime.NewError(fmt.Sprintf("Re-link Discord at %s", linkingPageUrl), StatusUnauthenticated)
+	}
+
+	// Refresh the access token
+	if err := accessToken.Refresh(vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"]); err != nil {
+		logger.Warn("error refreshing DiscordAccessToken: %v", err)
+		nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
+		return nil, runtime.NewError("error refreshing DiscordAccessToken", StatusUnauthenticated)
+	}
+
+	// Write the refreshed token to storage
+	if err := WriteAccessTokenToStorage(ctx, logger, nk, account.User.Id, accessToken); err != nil {
+		logger.Warn("error writing DiscordAccessToken to storage: %v", err)
+		return nil, runtime.NewError("error writing DiscordAccessToken to storage", StatusInternalError)
+	}
+
+	// Update the customId. This is used as the timestamp for the discord token refresh.
+	nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
+	nk.LinkCustom(ctx, account.User.Id, accessToken.AccessToken)
+
+	// Get the Nakama user ID from the runtime context
+	nakamaUserId, ok := ctx.Value(runtime.RUNTIME_CTX_USER_ID).(string)
+	if !ok {
+		return nil, runtime.NewError("error getting userId", StatusInternalError)
+	}
+	// Get the Nakama Account
+	nakamaAccount, err := nk.AccountGetId(ctx, nakamaUserId)
+	if err != nil {
+		logger.Warn("error getting nakama user: %v", err)
+		return nil, runtime.NewError("error getting nakama user", StatusInternalError)
+	}
+
+	//the discord bot
+	botGuildId := vars["DISCORD_BOT_GUILD"]
+	bot, err := discordgo.New("Bot " + vars["DISCORD_BOT_TOKEN"])
+	if err != nil {
+		logger.Warn("error creating discord bot session: %v", err)
+		return nil, runtime.NewError("error creating discord bot session", StatusInternalError)
+	}
+
+	// Get the Discord user
+	discord, err := discordgo.New("Bearer " + accessToken.AccessToken)
+	if err != nil {
+		logger.Warn("error creating discord session: %v", err)
+		return nil, runtime.NewError("error creating discord session", StatusInternalError)
+	}
+	defer discord.Close()
+	discordUser, err := discord.User("@me")
+	if err != nil {
+		logger.Warn("error getting discord user: %v", err)
+		return nil, runtime.NewError("error getting discord user", StatusInternalError)
+	}
+
+	// Get the Discord guildMember
+	guildMember, err := bot.GuildMember(botGuildId, discordUser.ID)
+	if err != nil {
+		logger.Warn("error getting guild member: %v", err)
+		return nil, runtime.NewError("error getting guild member", StatusInternalError)
+	}
+
+	// Construct the user info from the discord user and guildMember
+	avatarUrl := fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordUser.ID, discordUser.Avatar)
+	locale := discordUser.Locale
+
+	displayName := DetermineDisplayName(nakamaAccount, discordUser, guildMember)
+	// Check if the displayName matches an existing nakama username
+	// If it does, throw a warning and set the displayName to the discord username
+	// This is to prevent duplicate displayNames
+	users, err := nk.UsersGetUsername(ctx, []string{displayName})
+	if err != nil {
+		logger.WithField("err", err).Error("Users get username error.")
+	} else {
+		if len(users) > 0 {
+			logger.Warn("displayName: %s already exists as a username. Setting displayName to discord username: %s", displayName, discordUser.Username)
+			displayName = discordUser.Username
+		}
+	}
+
+	// Update the Nakama user
+	if err := nk.AccountUpdateId(ctx, nakamaUserId, "", nil, displayName, "", "", locale, avatarUrl); err != nil {
+		logger.Warn("error updating nakama user: %v", err)
+		return nil, runtime.NewError(fmt.Sprintf("%v", err), StatusInternalError)
+	}
+
+	return account, nil
 }

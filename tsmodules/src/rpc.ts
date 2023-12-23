@@ -20,7 +20,6 @@ import {
 } from './types';
 
 import {
-  getDeviceLinkCodeRpc,
   discordLinkDeviceRpc,
 } from './linking';
 
@@ -393,6 +392,5 @@ export {
   getChannelInfoRpc,
   setLoginSettingsRpc,
   getLoginSettingsRpc,
-  getDeviceLinkCodeRpc,
   discordLinkDeviceRpc,
 }

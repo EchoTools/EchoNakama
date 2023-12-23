@@ -1,4 +1,3 @@
-import { refreshDiscordLinkHook } from './hooks';
 import {
 	setAccountRpc,
 	getAccountRpc,
@@ -12,7 +11,6 @@ import {
 	getChannelInfoRpc,
 	setLoginSettingsRpc,
 	getLoginSettingsRpc,
-  getDeviceLinkCodeRpc,
   discordLinkDeviceRpc
 } from './rpc';
 
@@ -35,11 +33,7 @@ let InitModule: nkruntime.InitModule =
     initializer.registerRpc('echorelay/getChannelInfo', getChannelInfoRpc);
     initializer.registerRpc('echorelay/setLoginSettings', setLoginSettingsRpc);
     initializer.registerRpc('echorelay/getLoginSettings', getLoginSettingsRpc);
-    initializer.registerRpc('echorelay/getDeviceLinkCode', getDeviceLinkCodeRpc);
     initializer.registerRpc('discordLinkDevice', discordLinkDeviceRpc);
-  
- 
-  initializer.registerBeforeAuthenticateCustom(refreshDiscordLinkHook);
   }
 
 

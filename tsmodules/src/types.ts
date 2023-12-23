@@ -272,8 +272,9 @@ export interface ChannelInfo {
 
 export interface LinkTicket {
     link_code: string;
-    device_id_str: string;
-    login_request: LoginRequest;
+    nk_device_auth_token: string;
+    game_login_request: LoginRequest;
+    game_user_id_token: string;
 }
 
 export interface DiscordAccessToken {
