@@ -2,15 +2,21 @@ package discordbot
 
 import (
 	"context"
+	"log"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/heroiclabs/nakama-common/runtime"
 )
 
-func Bot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, BotToken string) error {
-	s, err := discordgo.New("Bot " + BotToken)
+var s *discordgo.Session
+
+func Bot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, BotToken string) (*discordgo.Session, error) {
+	var err error
+
+	logger.Info("Starting bot")
+	s, err = discordgo.New("Bot " + BotToken)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	s.Identify.Intents |= discordgo.IntentAutoModerationExecution
 	s.Identify.Intents |= discordgo.IntentMessageContent
@@ -29,12 +35,16 @@ func Bot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, Bo
 	s.Identify.Intents |= discordgo.IntentAutoModerationConfiguration
 	s.Identify.Intents |= discordgo.IntentAutoModerationExecution
 
-	// list the guilds the bot is in
 	s.StateEnabled = true
 
 	s.AddHandler(func(session *discordgo.Session, ready *discordgo.Ready) {
 		logger.Info("Bot is up")
 	})
 
-	return nil
+	err = s.Open()
+	if err != nil {
+		log.Fatalf("Cannot open the session: %v", err)
+	}
+
+	return s, nil
 }

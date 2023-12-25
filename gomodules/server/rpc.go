@@ -6,6 +6,7 @@ import (
 	"echonakama/server/services"
 	"echonakama/server/services/login"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,7 +44,7 @@ const (
 // The function creates a ServiceContext object and passes it to the login service for processing.
 // If the login request is successful, it marshals the LoginSuccess object into JSON and returns it as a string.
 // If there is an error during the process, it returns an error with an appropriate message.
-func LoginRequestRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
+func LoginRequestRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string, discordBot *discordgo.Session) (string, error) {
 
 	// Parse the payload into a LoginRequest object
 	var request login.LoginRequest
@@ -57,6 +58,7 @@ func LoginRequestRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 		Logger:       logger,
 		DbConnection: db,
 		NakamaModule: nk,
+		DiscordBot:   discordBot,
 	}
 
 	// Process the login request
@@ -140,7 +142,7 @@ func DiscordSignInRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk
 	}
 	if len(results) == 0 {
 		// create the user
-		nkUserId, _, _, err = nk.AuthenticateCustom(ctx, accessToken.AccessToken, user.ID, true)
+		nkUserId, _, _, err = nk.AuthenticateCustom(ctx, user.ID, user.ID, true)
 		if err != nil {
 			return "", runtime.NewError("Unable to create user", StatusInternalError)
 		}
@@ -217,7 +219,6 @@ func DiscordSignInRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk
 // 7. Deletes the link ticket from storage.
 func LinkDeviceRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
 	vars, _ := ctx.Value(runtime.RUNTIME_CTX_ENV).(map[string]string)
-
 	// unmarshall the payload
 	type LinkDeviceRequest struct {
 		SessionToken string `json:"sessionToken"`
@@ -237,28 +238,6 @@ func LinkDeviceRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk ru
 		return "", runtime.NewError("LinkCode is empty", StatusInvalidArgument)
 	}
 
-	// read the LinkTicket from storage
-	objects, err := nk.StorageRead(ctx, []*runtime.StorageRead{
-		{
-			Collection: login.LinkTicketCollection,
-			Key:        request.LinkCode,
-			UserID:     login.SystemUserId,
-		},
-	})
-	if err != nil {
-		logger.WithField("err", err).Error("Unable to read link ticket from storage")
-		return "", runtime.NewError("Unable to read link ticket from storage", StatusInternalError)
-	}
-	if len(objects) == 0 {
-		logger.WithField("linkCode", request.LinkCode).Error("Unable to find link ticket")
-		return "", runtime.NewError("Unable to find link ticket", StatusNotFound)
-	}
-	var linkTicket login.LinkTicket
-	if err := json.Unmarshal([]byte(objects[0].Value), &linkTicket); err != nil {
-		logger.WithField("err", err).Error("Unable to unmarshal link ticket")
-		return "", runtime.NewError("Unable to unmarshal link ticket", StatusInternalError)
-	}
-
 	// verify the sessionToken. It's a JWT signed by the server.
 	// pull the uid out of it
 	logger.WithField("sessionToken", request.SessionToken).Info("Verifying session token")
@@ -269,32 +248,69 @@ func LinkDeviceRpc(ctx context.Context, logger runtime.Logger, db *sql.DB, nk ru
 	}
 	uid := token.Claims.(jwt.MapClaims)["uid"].(string)
 
-	// get the account
+	if err := LinkAccountDevice(ctx, nk, logger, request.LinkCode, uid); err != nil {
+		return "", err
+	}
+
+	return "", nil
+}
+
+func LinkDiscordDevice(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, linkCode string, discordId string) error {
+	results, err := nk.UsersGetUsername(ctx, []string{discordId})
+	if err != nil {
+		return errors.New("unable to get user: %v")
+	}
+	if len(results) == 0 {
+		return errors.New("user not found")
+	}
+	LinkAccountDevice(ctx, nk, logger, linkCode, results[0].Id)
+	return nil
+}
+
+func LinkAccountDevice(ctx context.Context, nk runtime.NakamaModule, logger runtime.Logger, linkCode string, uid string) error {
+	objects, err := nk.StorageRead(ctx, []*runtime.StorageRead{
+		{
+			Collection: login.LinkTicketCollection,
+			Key:        linkCode,
+			UserID:     login.SystemUserId,
+		},
+	})
+	if err != nil {
+		logger.WithField("err", err).Error("Unable to read link ticket from storage")
+		return runtime.NewError("Unable to read link ticket from storage", StatusInternalError)
+	}
+	if len(objects) == 0 {
+		logger.WithField("linkCode", linkCode).Error("Unable to find link ticket")
+		return runtime.NewError("Unable to find link ticket", StatusNotFound)
+	}
+	var linkTicket login.LinkTicket
+	if err := json.Unmarshal([]byte(objects[0].Value), &linkTicket); err != nil {
+		logger.WithField("err", err).Error("Unable to unmarshal link ticket")
+		return runtime.NewError("Unable to unmarshal link ticket", StatusInternalError)
+	}
+
 	account, err := nk.AccountGetId(ctx, uid)
 	if err != nil {
 		logger.WithField("err", err).Error("Unable to get account")
-		return "", runtime.NewError("Unable to get account", StatusInternalError)
+		return runtime.NewError("Unable to get account", StatusInternalError)
 	}
 
-	// link the device
 	if err := nk.LinkDevice(ctx, account.GetUser().GetId(), linkTicket.DeviceAuthToken); err != nil {
 		logger.WithField("err", err).Error("Unable to link device")
-		return "", runtime.NewError("Unable to link device", StatusInternalError)
+		return runtime.NewError("Unable to link device", StatusInternalError)
 	}
 
-	// delete the linkTicket
 	if err := nk.StorageDelete(ctx, []*runtime.StorageDelete{
 		{
 			Collection: login.LinkTicketCollection,
-			Key:        request.LinkCode,
+			Key:        linkCode,
 			UserID:     login.SystemUserId,
 		},
 	}); err != nil {
 		logger.WithField("err", err).Error("Unable to delete link ticket")
-		return "", runtime.NewError("Unable to delete link ticket", StatusInternalError)
+		return runtime.NewError("Unable to delete link ticket", StatusInternalError)
 	}
-
-	return "", nil
+	return nil
 }
 
 // verifyJWT parses and verifies a JWT token using the provided key function.

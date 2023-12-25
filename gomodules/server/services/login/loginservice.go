@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"time"
 
 	"echonakama/game"
 	"echonakama/server/services"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/google/uuid"
 	"github.com/heroiclabs/nakama-common/api"
 	"github.com/heroiclabs/nakama-common/runtime"
@@ -273,7 +273,7 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 	ctx := serviceContext.Ctx
 	nk := serviceContext.NakamaModule
 	logger := serviceContext.Logger
-
+	discordBot := serviceContext.DiscordBot
 	// Get the linking page url from the environment
 	vars, _ := ctx.Value(runtime.RUNTIME_CTX_ENV).(map[string]string)
 	linkingPageUrl := vars["LINK_PAGE_URL"]
@@ -300,10 +300,12 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 		linkTicket, err := loginRequest.LinkTicket(serviceContext, SystemUserId)
 		if err != nil {
 			logger.WithField("err", err).Error("unable to generate link ticket.")
-			return nil, runtime.NewError(fmt.Sprintf("unable to generate link ticket: %q", UserIdToken), StatusInternalError)
+			return nil, runtime.NewError(fmt.Sprintf("unable to generate link ticket: %q", UserIdToken), StatusPermissionDenied)
 		}
+
 		logger.WithField("linkTicket", linkTicket).Debug("Link ticket found/generated.")
-		return nil, runtime.NewError(fmt.Sprintf("visit %s and enter code: %s", linkingPageUrl, linkTicket.Code), StatusNotFound)
+		// Return the link ticket to the client
+		return nil, runtime.NewError(fmt.Sprintf("visit %s and enter code: %s", linkingPageUrl, linkTicket.Code), StatusInvalidArgument)
 
 	}
 
@@ -318,7 +320,7 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 		return nil, runtime.NewError(fmt.Sprintf("account Permanently Banned: %q", UserIdToken), StatusPermissionDenied)
 	}
 
-	// Authenticate if hte accounts has a password set (i.e. an email is set)
+	// Authenticate if the accounts has a password set (i.e. an email is set)
 	if account.Email != "" {
 		_, _, _, err = nk.AuthenticateEmail(ctx, account.Email, authPassword, "", false)
 		if err != nil {
@@ -339,93 +341,78 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 		return nil, runtime.NewError(fmt.Sprintf("Re-link %s at %s", UserIdToken, linkingPageUrl), StatusInternalError)
 	}
 
-	// get the discord access token from storage
-	accessToken, err := ReadAccessTokenFromStorage(ctx, logger, nk, account.User.Id, vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"])
-	if err != nil {
-		logger.Warn("error reading discord access token from storage: %v", err)
-		return nil, runtime.NewError("error reading discord access token from storage", StatusInternalError)
-	}
-	if accessToken == nil {
-		return nil, runtime.NewError(fmt.Sprintf("Re-link Discord at %s", linkingPageUrl), StatusUnauthenticated)
-	}
+	/*
+		// The tokens expire too quickly to use this method
+		// get the discord access token from storage
+		accessToken, err := ReadAccessTokenFromStorage(ctx, logger, nk, account.User.Id, vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"])
+		if err != nil {
+			logger.Warn("error reading discord access token from storage: %v", err)
+			return nil, runtime.NewError("error reading discord access token from storage", StatusInternalError)
+		}
+		if accessToken == nil {
+			return nil, runtime.NewError(fmt.Sprintf("Re-link Discord at %s", linkingPageUrl), StatusUnauthenticated)
+		}
 
-	// Refresh the access token
-	if err := accessToken.Refresh(vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"]); err != nil {
-		logger.Warn("error refreshing DiscordAccessToken: %v", err)
+		// Refresh the access token
+		if err := accessToken.Refresh(vars["DISCORD_CLIENT_ID"], vars["DISCORD_CLIENT_SECRET"]); err != nil {
+			logger.Warn("error refreshing DiscordAccessToken: %v", err)
+			nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
+			return nil, runtime.NewError("error refreshing DiscordAccessToken", StatusUnauthenticated)
+		}
+
+		// Write the refreshed token to storage
+		if err := WriteAccessTokenToStorage(ctx, logger, nk, account.User.Id, accessToken); err != nil {
+			logger.Warn("error writing DiscordAccessToken to storage: %v", err)
+			return nil, runtime.NewError("error writing DiscordAccessToken to storage", StatusInternalError)
+		}
+	*/
+
+	// if the nakama custom id isn't composed of only numbers, then update the customId to be the discord ID
+	// this is to support legacy accounts that were created before the discord ID was used as the customId
+	// use a regular expression to check if the customId is only numbers
+	// if it is, then it is a discord ID, and we don't need to update it
+	// if it is not, then it is a legacy customId, and we need to update it to the discord ID
+	re := regexp.MustCompile("^[0-9]+$")
+	if !re.Match([]byte(account.CustomId)) {
+		logger.Warn("Migrating legacy account to discord ID")
 		nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
-		return nil, runtime.NewError("error refreshing DiscordAccessToken", StatusUnauthenticated)
-	}
-
-	// Write the refreshed token to storage
-	if err := WriteAccessTokenToStorage(ctx, logger, nk, account.User.Id, accessToken); err != nil {
-		logger.Warn("error writing DiscordAccessToken to storage: %v", err)
-		return nil, runtime.NewError("error writing DiscordAccessToken to storage", StatusInternalError)
-	}
-
-	// Update the customId. This is used as the timestamp for the discord token refresh.
-	nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
-	nk.LinkCustom(ctx, account.User.Id, accessToken.AccessToken)
-
-	// Get the Nakama user ID from the runtime context
-	nakamaUserId, ok := ctx.Value(runtime.RUNTIME_CTX_USER_ID).(string)
-	if !ok {
-		return nil, runtime.NewError("error getting userId", StatusInternalError)
-	}
-	// Get the Nakama Account
-	nakamaAccount, err := nk.AccountGetId(ctx, nakamaUserId)
-	if err != nil {
-		logger.Warn("error getting nakama user: %v", err)
-		return nil, runtime.NewError("error getting nakama user", StatusInternalError)
-	}
-
-	//the discord bot
-	botGuildId := vars["DISCORD_BOT_GUILD"]
-	bot, err := discordgo.New("Bot " + vars["DISCORD_BOT_TOKEN"])
-	if err != nil {
-		logger.Warn("error creating discord bot session: %v", err)
-		return nil, runtime.NewError("error creating discord bot session", StatusInternalError)
-	}
-
-	// Get the Discord user
-	discord, err := discordgo.New("Bearer " + accessToken.AccessToken)
-	if err != nil {
-		logger.Warn("error creating discord session: %v", err)
-		return nil, runtime.NewError("error creating discord session", StatusInternalError)
-	}
-	defer discord.Close()
-	discordUser, err := discord.User("@me")
-	if err != nil {
-		logger.Warn("error getting discord user: %v", err)
-		return nil, runtime.NewError("error getting discord user", StatusInternalError)
+		nk.LinkCustom(ctx, account.User.Id, account.User.Id)
 	}
 
 	// Get the Discord guildMember
-	guildMember, err := bot.GuildMember(botGuildId, discordUser.ID)
+	botGuildId := vars["DISCORD_BOT_GUILD"]
+	guildMember, err := discordBot.GuildMember(botGuildId, account.User.Username)
+
 	if err != nil {
 		logger.Warn("error getting guild member: %v", err)
 		return nil, runtime.NewError("error getting guild member", StatusInternalError)
 	}
 
-	// Construct the user info from the discord user and guildMember
-	avatarUrl := fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordUser.ID, discordUser.Avatar)
-	locale := discordUser.Locale
-
-	displayName := DetermineDisplayName(nakamaAccount, discordUser, guildMember)
+	displayName := DetermineDisplayName(account, guildMember.User, guildMember)
 	// Check if the displayName matches an existing nakama username
-	// If it does, throw a warning and set the displayName to the discord username
+	// TODO: message the user that their trying to use a name that is in use.
 	// This is to prevent duplicate displayNames
-	users, err := nk.UsersGetUsername(ctx, []string{displayName})
-	if err != nil {
-		logger.WithField("err", err).Error("Users get username error.")
-	} else {
-		if len(users) > 0 {
-			logger.Warn("displayName: %s already exists as a username. Setting displayName to discord username: %s", displayName, discordUser.Username)
-			displayName = discordUser.Username
+	/*
+		users, err := nk.UsersGetUsername(ctx, []string{displayName})
+		if err != nil {
+			logger.WithField("err", err).Error("Users get username error.")
+		} else {
+			if len(users) > 0 {
+				logger.Warn("displayName: %s already exists as a username. Setting displayName to discord username: %s", displayName, guildMember.User.Username)
+				// Add 3 random digits to teh end of the users name to make it unique
+				// check if it is in use
+				// it is, loop and try again
+				// it is not, set the name
+				displayName =
+				}
+
+				displayName = guildMember.User.Username
+			}
 		}
-	}
+	*/
 
 	// Update the Nakama user
-	if err := nk.AccountUpdateId(ctx, nakamaUserId, "", nil, displayName, "", "", locale, avatarUrl); err != nil {
+	if err := nk.AccountUpdateId(ctx, account.User.Id, "", nil, displayName, "", "", "", guildMember.AvatarURL("")); err != nil {
 		logger.Warn("error updating nakama user: %v", err)
 		return nil, runtime.NewError(fmt.Sprintf("%v", err), StatusInternalError)
 	}

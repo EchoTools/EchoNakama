@@ -14,7 +14,15 @@ import (
 func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, initializer runtime.Initializer) error {
 	vars, _ := ctx.Value(runtime.RUNTIME_CTX_ENV).(map[string]string)
 
-	if err := initializer.RegisterRpc("relay/loginrequest", server.LoginRequestRpc); err != nil {
+	// Start the bot
+	discordBot, err := discordbot.Bot(ctx, logger, nk, vars["DISCORD_BOT_TOKEN"])
+	if err != nil {
+		logger.Error("Unable to create bot: %v", err)
+	}
+
+	if err := initializer.RegisterRpc("relay/loginrequest", func(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
+		return server.LoginRequestRpc(ctx, logger, db, nk, payload, discordBot)
+	}); err != nil {
 		logger.Error("Unable to register: %v", err)
 		return err
 	}
@@ -30,13 +38,11 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	}
 
 	login.RegisterIndexes(initializer)
-	initializer.RegisterBeforeAuthenticateCustom(login.BeforeAuthenticateCustom)
+	//initializer.RegisterBeforeAuthenticateCustom(login.BeforeAuthenticateCustom)
 
-	initializer.RegisterAfterAuthenticateCustom(login.AfterAuthenticateCustom)
+	//initializer.RegisterAfterAuthenticateCustom(login.AfterAuthenticateCustom)
 
 	logger.Info("Initialized module.")
 
-	// Start the bot
-	discordbot.Bot(ctx, logger, nk, vars["DISCORD_BOT_TOKEN"])
 	return nil
 }
