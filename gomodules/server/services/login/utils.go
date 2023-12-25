@@ -14,25 +14,28 @@ func DetermineDisplayName(nakamaAccount *api.Account, discordUser *discordgo.Use
 	// Try the guild nickname, then the discord global displayname, then the discord username
 	if guildMember != nil && guildMember.Nick != "" {
 		displayName := FilterDisplayName(guildMember.Nick)
-		if len(displayName) >= 2 {
+		if displayName != "" {
 			return displayName
 		}
 	}
+
 	if discordUser != nil && discordUser.GlobalName != "" {
 		displayName := FilterDisplayName(discordUser.GlobalName)
-		if len(displayName) >= 2 {
+		if displayName != "" {
 			return displayName
 		}
 	}
+
 	if discordUser != nil && discordUser.Username != "" {
 		displayName := FilterDisplayName(discordUser.Username)
-		if len(displayName) >= 2 {
+		if displayName != "" {
 			return displayName
 		}
 	}
+
 	if nakamaAccount != nil && nakamaAccount.User != nil && nakamaAccount.User.Username != "" {
 		displayName := FilterDisplayName(nakamaAccount.User.Username)
-		if len(displayName) >= 2 {
+		if displayName != "" {
 			return displayName
 		}
 	}
@@ -42,12 +45,18 @@ func DetermineDisplayName(nakamaAccount *api.Account, discordUser *discordgo.Use
 
 func FilterDisplayName(displayName string) string {
 	// Use a regular expression to match allowed characters
-	re := regexp.MustCompile("[^-a-zA-Z0-9_]")
+	re := regexp.MustCompile("[^-_[]A-Za-z]")
 
 	// Filter the string using the regular expression
 
 	filteredUsername := re.ReplaceAllString(displayName, "")
 
+	// two characters minimum
+	if len(filteredUsername) < 2 {
+		filteredUsername = ""
+	}
+
+	// twenty characters maximum
 	if len(filteredUsername) > 20 {
 		filteredUsername = filteredUsername[:20]
 	}
