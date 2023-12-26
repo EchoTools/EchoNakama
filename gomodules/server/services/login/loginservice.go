@@ -70,6 +70,10 @@ func ProcessLoginRequest(serviceContext *services.ServiceContext, request *Login
 	authPassword := request.UserPassword
 	request.UserPassword = ""
 
+	// set the hmd serial number to the override
+	if request.HmdSerialNumberOverride != "" {
+		request.Metadata.HmdSerialNumber = request.HmdSerialNumberOverride
+	}
 	relayNkUserID, ok := ctx.Value(runtime.RUNTIME_CTX_USER_ID).(string)
 	if !ok {
 		return nil, runtime.NewError("relay must authenticate", StatusUnauthenticated)
