@@ -367,6 +367,16 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 		}
 	*/
 
+	// Use the discordbot to get the guild members ID
+	// Get the Discord guildMember
+
+	botGuildId := vars["DISCORD_BOT_GUILD"]
+	guildMember, err := discordBot.GuildMember(botGuildId, account.User.Username)
+	if err != nil {
+		logger.Warn("error getting guild member: %v", err)
+		return nil, runtime.NewError("error getting guild member", StatusInternalError)
+	}
+
 	// if the nakama custom id isn't composed of only numbers, then update the customId to be the discord ID
 	// this is to support legacy accounts that were created before the discord ID was used as the customId
 	// use a regular expression to check if the customId is only numbers
@@ -376,16 +386,7 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 	if !re.Match([]byte(account.CustomId)) {
 		logger.Warn("Migrating legacy account to discord ID")
 		nk.UnlinkCustom(ctx, account.User.Id, account.CustomId)
-		nk.LinkCustom(ctx, account.User.Id, account.User.Id)
-	}
-
-	// Get the Discord guildMember
-	botGuildId := vars["DISCORD_BOT_GUILD"]
-	guildMember, err := discordBot.GuildMember(botGuildId, account.User.Username)
-
-	if err != nil {
-		logger.Warn("error getting guild member: %v", err)
-		return nil, runtime.NewError("error getting guild member", StatusInternalError)
+		nk.LinkCustom(ctx, account.User.Id, guildMember.User.ID)
 	}
 
 	displayName := DetermineDisplayName(account, guildMember.User, guildMember)
@@ -403,7 +404,7 @@ func authenticateAccountDevice(serviceContext *services.ServiceContext, loginReq
 				// check if it is in use
 				// it is, loop and try again
 				// it is not, set the name
-				displayName =
+				displayName = guildMember.User.Username + strconv.Itoa(rand.Intn(999))
 				}
 
 				displayName = guildMember.User.Username

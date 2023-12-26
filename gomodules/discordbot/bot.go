@@ -2,49 +2,54 @@ package discordbot
 
 import (
 	"context"
-	"log"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/heroiclabs/nakama-common/runtime"
 )
 
-var s *discordgo.Session
+var bot *discordgo.Session
 
 func Bot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, BotToken string) (*discordgo.Session, error) {
 	var err error
 
 	logger.Info("Starting bot")
-	s, err = discordgo.New("Bot " + BotToken)
+	bot, err = discordgo.New("Bot " + BotToken)
+
 	if err != nil {
 		return nil, err
 	}
-	s.Identify.Intents |= discordgo.IntentAutoModerationExecution
-	s.Identify.Intents |= discordgo.IntentMessageContent
-	s.Identify.Intents |= discordgo.IntentGuilds
-	s.Identify.Intents |= discordgo.IntentGuildMembers
-	s.Identify.Intents |= discordgo.IntentGuildBans
-	s.Identify.Intents |= discordgo.IntentGuildEmojis
-	s.Identify.Intents |= discordgo.IntentGuildWebhooks
-	s.Identify.Intents |= discordgo.IntentGuildInvites
-	s.Identify.Intents |= discordgo.IntentGuildPresences
-	s.Identify.Intents |= discordgo.IntentGuildMessages
-	s.Identify.Intents |= discordgo.IntentGuildMessageReactions
-	s.Identify.Intents |= discordgo.IntentDirectMessages
-	s.Identify.Intents |= discordgo.IntentDirectMessageReactions
-	s.Identify.Intents |= discordgo.IntentMessageContent
-	s.Identify.Intents |= discordgo.IntentAutoModerationConfiguration
-	s.Identify.Intents |= discordgo.IntentAutoModerationExecution
+	bot.Identify.Intents |= discordgo.IntentAutoModerationExecution
+	bot.Identify.Intents |= discordgo.IntentMessageContent
+	bot.Identify.Intents |= discordgo.IntentGuilds
+	bot.Identify.Intents |= discordgo.IntentGuildMembers
+	bot.Identify.Intents |= discordgo.IntentGuildBans
+	bot.Identify.Intents |= discordgo.IntentGuildEmojis
+	bot.Identify.Intents |= discordgo.IntentGuildWebhooks
+	bot.Identify.Intents |= discordgo.IntentGuildInvites
+	bot.Identify.Intents |= discordgo.IntentGuildPresences
+	bot.Identify.Intents |= discordgo.IntentGuildMessages
+	bot.Identify.Intents |= discordgo.IntentGuildMessageReactions
+	bot.Identify.Intents |= discordgo.IntentDirectMessages
+	bot.Identify.Intents |= discordgo.IntentDirectMessageReactions
+	bot.Identify.Intents |= discordgo.IntentMessageContent
+	bot.Identify.Intents |= discordgo.IntentAutoModerationConfiguration
+	bot.Identify.Intents |= discordgo.IntentAutoModerationExecution
 
-	s.StateEnabled = true
+	// slashcommands
 
-	s.AddHandler(func(session *discordgo.Session, ready *discordgo.Ready) {
+	RegisterSlashCommands(bot, logger, nk)
+
+	// list the guilds the bot is in
+	bot.StateEnabled = true
+
+	bot.AddHandler(func(session *discordgo.Session, ready *discordgo.Ready) {
 		logger.Info("Bot is up")
 	})
 
-	err = s.Open()
+	err = bot.Open()
 	if err != nil {
-		log.Fatalf("Cannot open the session: %v", err)
+		return nil, err
 	}
 
-	return s, nil
+	return bot, nil
 }
