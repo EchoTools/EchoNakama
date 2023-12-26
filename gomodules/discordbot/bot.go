@@ -37,8 +37,6 @@ func Bot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, Bo
 
 	// slashcommands
 
-	RegisterSlashCommands(bot, logger, nk)
-
 	// list the guilds the bot is in
 	bot.StateEnabled = true
 
