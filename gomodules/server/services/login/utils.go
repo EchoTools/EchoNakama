@@ -45,15 +45,17 @@ func DetermineDisplayName(nakamaAccount *api.Account, discordUser *discordgo.Use
 
 func FilterDisplayName(displayName string) string {
 	// Use a regular expression to match allowed characters
-	re := regexp.MustCompile("[^-_[]A-Za-z]")
-
+	refilter := regexp.MustCompile(`[^-0-9A-Za-z_\[\]]`)
+	rematch := regexp.MustCompile(`[A-Za-z0-9]{2}`)
 	// Filter the string using the regular expression
 
-	filteredUsername := re.ReplaceAllString(displayName, "")
-
+	filteredUsername := refilter.ReplaceAllLiteralString(displayName, "")
+	if !rematch.MatchString(filteredUsername) {
+		return ""
+	}
 	// two characters minimum
 	if len(filteredUsername) < 2 {
-		filteredUsername = ""
+		return ""
 	}
 
 	// twenty characters maximum
